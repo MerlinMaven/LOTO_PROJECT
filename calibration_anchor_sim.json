@@ -1,0 +1,41 @@
+{
+  "machine_id": "SIM-CHP-2026",
+  "anchors": {
+    "Disjoncteur principal": {
+      "hologram_type": "arrow",
+      "pos_x": 0.25,
+      "pos_y": 1.45,
+      "pos_z": -0.15,
+      "rot_x": 0.0,
+      "rot_y": 90.0,
+      "rot_z": 0.0
+    },
+    "Cadenas disjoncteur": {
+      "hologram_type": "ring",
+      "pos_x": 0.28,
+      "pos_y": 1.40,
+      "pos_z": -0.12,
+      "rot_x": 0.0,
+      "rot_y": 0.0,
+      "rot_z": 0.0
+    },
+    "Vanne de décharge": {
+      "hologram_type": "cube",
+      "pos_x": -0.45,
+      "pos_y": 0.85,
+      "pos_z": 0.40,
+      "rot_x": 45.0,
+      "rot_y": 180.0,
+      "rot_z": 0.0
+    },
+    "Cadenas vanne": {
+      "hologram_type": "warning_icon",
+      "pos_x": -0.42,
+      "pos_y": 0.80,
+      "pos_z": 0.38,
+      "rot_x": 0.0,
+      "rot_y": 0.0,
+      "rot_z": 0.0
+    }
+  }
+}

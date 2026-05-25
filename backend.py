@@ -85,6 +85,19 @@ class CloseIntervention(BaseModel):
     intervention_id: str
     signature_base64: str
 
+class AnchorItem(BaseModel):
+    organ_name: str
+    pos_x: float
+    pos_y: float
+    pos_z: float
+    rot_x: float
+    rot_y: float
+    rot_z: float
+
+class AnchorsUpdate(BaseModel):
+    anchors_list: List[AnchorItem]
+
+
 # --- Fonctions Helpers ---
 
 def decode_base64_image(base64_str: str) -> np.ndarray:
@@ -431,3 +444,37 @@ async def close_intervention(data: CloseIntervention):
         "message": "Intervention clôturée avec succès et rapport PDF généré.",
         "pdf_report_url": pdf_url
     }
+
+@app.post("/procedures/{machine_id}/anchors")
+async def update_procedure_anchors(machine_id: str, data: AnchorsUpdate):
+    """Met à jour les points d'ancrage spatial calibrés pour une procédure spécifique."""
+    if not db:
+        raise HTTPException(status_code=500, detail="Base de données indisponible.")
+        
+    # Charger la procédure existante
+    res = db.table("procedures").select("*").eq("machine_id", machine_id).execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail=f"Procédure non trouvée pour la machine {machine_id}.")
+        
+    proc = res.data[0]
+    stages = proc.get("workflow_stages", {})
+    if not isinstance(stages, dict):
+        stages = {"lockout": [], "restoration": []}
+        
+    # Convertir la liste d'ancrages en dictionnaire pour préserver la compatibilité avec le dashboard et la base de données
+    anchors_dict = {}
+    for item in data.anchors_list:
+        anchors_dict[item.organ_name] = {
+            "pos_x": item.pos_x,
+            "pos_y": item.pos_y,
+            "pos_z": item.pos_z,
+            "rot_x": item.rot_x,
+            "rot_y": item.rot_y,
+            "rot_z": item.rot_z
+        }
+        
+    stages["anchors"] = anchors_dict
+    
+    # Mettre à jour la base de données
+    db.table("procedures").update({"workflow_stages": stages}).eq("machine_id", machine_id).execute()
+    return {"status": "success", "message": "Ancrages enregistrés avec succès."}

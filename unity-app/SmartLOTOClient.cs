@@ -16,21 +16,40 @@ public class SmartLOTOClient : MonoBehaviour
 
     // Modèles de données pour la désérialisation
     [System.Serializable]
+    public class SpatialGuideData
+    {
+        public string hologram_type;
+        public float pos_x;
+        public float pos_y;
+        public float pos_z;
+        public float rot_x;
+        public float rot_y;
+        public float rot_z;
+    }
+
+    [System.Serializable]
     public class ActionData
     {
         public string action_id;
         public string description;
         public string vision_prompt;
         public string completion_check;
+        public SpatialGuideData spatial_guide;
     }
 
     [System.Serializable]
     public class StageData
     {
         public int stage_id;
-        public string type;
         public string title;
         public ActionData[] actions;
+    }
+
+    [System.Serializable]
+    public class WorkflowPhases
+    {
+        public StageData[] lockout;
+        public StageData[] restoration;
     }
 
     [System.Serializable]
@@ -40,7 +59,7 @@ public class SmartLOTOClient : MonoBehaviour
         public string machine_name;
         public string created_by_hse;
         public string status;
-        public StageData[] workflow_stages;
+        public WorkflowPhases workflow_stages;
     }
 
     [System.Serializable]
@@ -85,6 +104,42 @@ public class SmartLOTOClient : MonoBehaviour
         public string image_url;
     }
 
+    [System.Serializable]
+    public class AnchorItem
+    {
+        public string organ_name;
+        public float pos_x;
+        public float pos_y;
+        public float pos_z;
+        public float rot_x;
+        public float rot_y;
+        public float rot_z;
+    }
+
+    [System.Serializable]
+    public class AnchorsUpdate
+    {
+        public AnchorItem[] anchors_list;
+    }
+
+    [System.Serializable]
+    private class StepOverrideRequest
+    {
+        public string intervention_id;
+        public int stage_id;
+        public string action_id;
+        public string image_base64;
+        public string reason;
+    }
+
+    [System.Serializable]
+    public class StepOverrideResponse
+    {
+        public bool verified;
+        public string message;
+        public string image_url;
+    }
+
     // Démarre une intervention sur Supabase via le Backend
     public void StartIntervention(string machineId)
     {
@@ -110,6 +165,7 @@ public class SmartLOTOClient : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
 
             yield return request.SendWebRequest();
 
@@ -136,12 +192,15 @@ public class SmartLOTOClient : MonoBehaviour
 
         using (UnityWebRequest request = UnityWebRequest.Get(url))
         {
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
             yield return request.SendWebRequest();
 
             if (request.result == UnityWebRequest.Result.Success)
             {
                 LOTOProcedure procedure = JsonUtility.FromJson<LOTOProcedure>(request.downloadHandler.text);
-                Debug.Log($"✅ Procédure chargée: {procedure.machine_name}. {procedure.workflow_stages.Length} étapes.");
+                int lockoutLength = procedure.workflow_stages?.lockout?.Length ?? 0;
+                int restorationLength = procedure.workflow_stages?.restoration?.Length ?? 0;
+                Debug.Log($"✅ Procédure chargée: {procedure.machine_name}. {lockoutLength + restorationLength} étapes.");
                 
                 // Diffuser la procédure à l'UI et au système de guidage 3D
                 // LotoManager.Instance.InitializeProcedure(procedure);
@@ -181,6 +240,7 @@ public class SmartLOTOClient : MonoBehaviour
             request.uploadHandler = new UploadHandlerRaw(bodyRaw);
             request.downloadHandler = new DownloadHandlerBuffer();
             request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
 
             yield return request.SendWebRequest();
 
@@ -201,6 +261,89 @@ public class SmartLOTOClient : MonoBehaviour
             else
             {
                 Debug.LogError($"❌ Erreur réseau lors de la validation: {request.error}");
+            }
+        }
+    }
+
+    // Uploads calibrated anchor positions from Unity Quest (AR) directly to the database
+    public void UploadCalibratedAnchors(string machineId, AnchorItem[] anchors)
+    {
+        StartCoroutine(PostCalibratedAnchors(machineId, anchors));
+    }
+
+    private IEnumerator PostCalibratedAnchors(string machineId, AnchorItem[] anchors)
+    {
+        string url = $"{backendUrl}/procedures/{machineId}/anchors";
+
+        AnchorsUpdate payload = new AnchorsUpdate
+        {
+            anchors_list = anchors
+        };
+
+        string jsonPayload = JsonUtility.ToJson(payload);
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
+
+        using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+        {
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
+
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                Debug.Log("✅ Points d'ancrage spatial téléversés avec succès vers le backend !");
+            }
+            else
+            {
+                Debug.LogError($"❌ Échec de téléversement des ancrages : {request.error} | {request.downloadHandler.text}");
+            }
+        }
+    }
+
+    // Sends a manual override validation request with reasoning and a camera proof image
+    public void ManualOverrideActiveStep(int stageId, string actionId, string reason, byte[] imageBytes)
+    {
+        string base64Image = Convert.ToBase64String(imageBytes);
+        StartCoroutine(PostManualOverrideStep(stageId, actionId, reason, base64Image));
+    }
+
+    private IEnumerator PostManualOverrideStep(int stageId, string actionId, string reason, string base64Image)
+    {
+        string url = $"{backendUrl}/interventions/override-step";
+
+        StepOverrideRequest req = new StepOverrideRequest
+        {
+            intervention_id = activeInterventionId,
+            stage_id = stageId,
+            action_id = actionId,
+            image_base64 = base64Image,
+            reason = reason
+        };
+
+        string jsonPayload = JsonUtility.ToJson(req);
+        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonPayload);
+
+        using (UnityWebRequest request = new UnityWebRequest(url, "POST"))
+        {
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
+            request.SetRequestHeader("ngrok-skip-browser-warning", "true");
+
+            yield return request.SendWebRequest();
+
+            if (request.result == UnityWebRequest.Result.Success)
+            {
+                StepOverrideResponse res = JsonUtility.FromJson<StepOverrideResponse>(request.downloadHandler.text);
+                Debug.Log($"✅ Étape {actionId} validée via dérogation manuelle ! {res.message}");
+                // LotoManager.Instance.OnStepValidated(actionId);
+            }
+            else
+            {
+                Debug.LogError($"❌ Échec de dérogation manuelle : {request.error} | {request.downloadHandler.text}");
             }
         }
     }

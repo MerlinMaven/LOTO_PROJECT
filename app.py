@@ -342,6 +342,14 @@ st.markdown("""
         border-color: #CBD5E1 !important;
     }
 
+    /* Colonne de gauche collante (sticky) pour garder les paramètres visibles lors du scroll */
+    div[data-testid="stTabPanel"] div[data-testid="stColumn"]:first-child {
+        position: -webkit-sticky !important;
+        position: sticky !important;
+        top: 6rem !important;
+        align-self: start !important;
+    }
+
     /* Style des containers avec bordure (Cartes et formulaires) */
     div[data-testid="stVerticalBlockBorderWrapper"] {
         border: 1px solid #E2E8F0 !important;
@@ -381,6 +389,46 @@ st.markdown("""
         border-color: #FCA5A5 !important;
         background-color: #FEE2E2 !important;
         box-shadow: none !important;
+    }
+    
+    /* File Uploader compact layout inside expanders */
+    [data-testid="stExpander"] [data-testid="stFileUploader"] {
+        padding: 0 !important;
+    }
+    [data-testid="stExpander"] [data-testid="stFileUploader"] section {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        padding: 8px 12px !important;
+        min-height: unset !important;
+        background-color: #F8FAFC !important;
+        border: 1px dashed #E2E8F0 !important;
+        border-radius: 8px !important;
+        gap: 15px !important;
+    }
+    [data-testid="stExpander"] [data-testid="stFileUploader"] section > div {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        justify-content: flex-start !important;
+        width: auto !important;
+        gap: 10px !important;
+    }
+    [data-testid="stExpander"] [data-testid="stFileUploader"] section svg {
+        display: none !important;
+    }
+    [data-testid="stExpander"] [data-testid="stFileUploader"] section div div {
+        font-size: 0.75rem !important;
+        margin: 0 !important;
+        color: #64748B !important;
+    }
+    [data-testid="stExpander"] [data-testid="stFileUploader"] section button {
+        margin: 0 !important;
+        padding: 4px 10px !important;
+        height: unset !important;
+        font-size: 0.75rem !important;
+        align-self: center !important;
     }
 </style>
 
@@ -634,6 +682,20 @@ def convert_flat_to_twophase(res_json):
         return res_json
     stages = res_json.get("workflow_stages", [])
     if isinstance(stages, dict) and ("lockout" in stages or "restoration" in stages):
+        for p_name in ["lockout", "restoration"]:
+            p_stages = stages.get(p_name, [])
+            for s in p_stages:
+                for a in s.get("actions", []):
+                    if "spatial_guide" not in a:
+                        a["spatial_guide"] = {
+                            "hologram_type": "arrow",
+                            "pos_x": 0.0,
+                            "pos_y": 0.0,
+                            "pos_z": 0.0,
+                            "rot_x": 0.0,
+                            "rot_y": 0.0,
+                            "rot_z": 0.0
+                        }
         return res_json
     lockout_stages = []
     restoration_stages = []
@@ -655,7 +717,16 @@ def convert_flat_to_twophase(res_json):
                     "action_id": a_id,
                     "description": a.get("description", ""),
                     "vision_prompt": a.get("vision_prompt", ""),
-                    "completion_check": a.get("completion_check", "vision_detection")
+                    "completion_check": a.get("completion_check", "vision_detection"),
+                    "spatial_guide": a.get("spatial_guide", {
+                        "hologram_type": "arrow",
+                        "pos_x": 0.0,
+                        "pos_y": 0.0,
+                        "pos_z": 0.0,
+                        "rot_x": 0.0,
+                        "rot_y": 0.0,
+                        "rot_z": 0.0
+                    })
                 })
             stage_copy = {
                 "stage_id": s_id,
@@ -671,6 +742,35 @@ def convert_flat_to_twophase(res_json):
         "restoration": restoration_stages
     }
     return res_json
+
+def auto_align_spatial_guides(proc_json, anchors):
+    if not anchors or not proc_json:
+        return proc_json
+    stages_dict = proc_json.get("workflow_stages", {})
+    for phase in ["lockout", "restoration"]:
+        for s in stages_dict.get(phase, []):
+            for a in s.get("actions", []):
+                sg = a.get("spatial_guide", {})
+                if (float(sg.get("pos_x", 0.0)) == 0.0 and 
+                    float(sg.get("pos_y", 0.0)) == 0.0 and 
+                    float(sg.get("pos_z", 0.0)) == 0.0):
+                    desc_lower = a.get("description", "").lower()
+                    prompt_lower = a.get("vision_prompt", "").lower()
+                    for anchor_name, val in anchors.items():
+                        if (anchor_name.lower() in desc_lower or 
+                            anchor_name.lower() in prompt_lower or 
+                            any(word in desc_lower for word in anchor_name.lower().split() if len(word) > 4)):
+                            a["spatial_guide"] = {
+                                "hologram_type": val.get("hologram_type", "arrow"),
+                                "pos_x": float(val.get("pos_x", 0.0)),
+                                "pos_y": float(val.get("pos_y", 0.0)),
+                                "pos_z": float(val.get("pos_z", 0.0)),
+                                "rot_x": float(val.get("rot_x", 0.0)),
+                                "rot_y": float(val.get("rot_y", 0.0)),
+                                "rot_z": float(val.get("rot_z", 0.0))
+                            }
+                            break
+    return proc_json
 
 # Composant de carte métrique premium avec couleur
 def render_metric_card(title, value, subtitle, icon_class, bg_color, text_color):
@@ -696,7 +796,7 @@ st.markdown("""
     </div>
     <div class="header-badge">
         <i class="fa-solid fa-shield-halved"></i>
-        Conformité OSHA 1910.147
+        Conçu selon les exigences OSHA 1910.147 (LOTO)
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -809,11 +909,12 @@ if menu == "Vue d'ensemble":
 
 elif menu == "Configuration LOTO":
     st.markdown("### Configuration des Procédures LOTO")
-    st.markdown("Générez et figez les fiches techniques contenant la logique fonctionnelle d'isolation machine.")
-
     tab1, tab2 = st.tabs(["Créer une Procédure", "Procédures Enregistrées"])
     
     with tab1:
+        if "save_success" in st.session_state:
+            st.success(st.session_state["save_success"])
+            del st.session_state["save_success"]
         col_left, col_right = st.columns([1.2, 2])
         
         with col_left:
@@ -827,6 +928,23 @@ elif menu == "Configuration LOTO":
                     "Disjoncteur électrique principal (noir)\nCadenas rouge sur moraillon électrique\nVanne de décharge de pression (rouge)\nCadenas jaune sur la vanne de fluide",
                     height=120
                 )
+                
+                with st.expander("⚙️ Importation d'ancrage de secours (JSON)"):
+                    uploaded_anchors_file = st.file_uploader("Importer des ancrages spatial (JSON)", type=["json"], label_visibility="collapsed")
+                    if uploaded_anchors_file is not None:
+                        try:
+                            import json
+                            anchors_data = json.loads(uploaded_anchors_file.getvalue().decode("utf-8"))
+                            if "anchors" in anchors_data:
+                                st.session_state["uploaded_anchors"] = anchors_data["anchors"]
+                                st.success(f"Fichier d'ancrage chargé : {len(anchors_data['anchors'])} organes détectés.")
+                            else:
+                                st.error("Le fichier JSON doit contenir une clé racine 'anchors'.")
+                        except Exception as e:
+                            st.error(f"Erreur de lecture du JSON : {e}")
+                
+                if "uploaded_anchors" in st.session_state:
+                    st.info(f"🔗 {len(st.session_state['uploaded_anchors'])} ancrages spatiaux actifs (base de données ou import).")
                 
                 gen_mode = st.selectbox(
                     "Moteur de génération",
@@ -882,170 +1000,468 @@ elif menu == "Configuration LOTO":
             st.markdown("<p style='font-weight:600;font-size:0.85rem;color:#0F172A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0.8rem;'>📝 Édition du Protocole de Sécurité</p>", unsafe_allow_html=True)
             
             if "generated_loto_json" in st.session_state:
-                proc_json = st.session_state["generated_loto_json"]
+                proc_json = convert_flat_to_twophase(st.session_state["generated_loto_json"])
+                
+                if "uploaded_anchors" not in st.session_state and db_client:
+                    try:
+                        exist_res = db_client.table("procedures").select("workflow_stages").eq("machine_id", m_id).execute()
+                        if exist_res.data:
+                            exist_stages = exist_res.data[0].get("workflow_stages", {})
+                            if isinstance(exist_stages, dict) and "anchors" in exist_stages:
+                                st.session_state["uploaded_anchors"] = exist_stages["anchors"]
+                    except Exception:
+                        pass
+                
+                if "uploaded_anchors" in st.session_state:
+                    proc_json = auto_align_spatial_guides(proc_json, st.session_state["uploaded_anchors"])
+                    
+                st.session_state["generated_loto_json"] = proc_json
                 
                 # Lier dynamiquement les modifications des inputs principaux aux valeurs du JSON final
                 proc_json["machine_id"] = m_id
                 proc_json["machine_name"] = m_name
                 proc_json["created_by_hse"] = hse_name
                 
-                stages = proc_json.get("workflow_stages", [])
+                stages_dict = proc_json.get("workflow_stages", {})
+                lockout_stages = stages_dict.get("lockout", [])
+                restoration_stages = stages_dict.get("restoration", [])
                 
                 # 1. Synchronisation initiale des widgets vers la session state JSON
-                for s in stages:
-                    s_id = s.get("stage_id")
-                    if not s_id:
-                        import uuid
-                        s_id = f"stg_{uuid.uuid4().hex[:6]}"
-                        s["stage_id"] = s_id
-                        
-                    title_key = f"edit_s_title_{s_id}"
-                    type_key = f"edit_s_type_{s_id}"
-                    
-                    if title_key in st.session_state:
-                        s["title"] = st.session_state[title_key]
-                    if type_key in st.session_state:
-                        s["type"] = st.session_state[type_key]
-                        
-                    for a in s.get("actions", []):
-                        a_id = a.get("action_id")
-                        if not a_id:
+                for phase_name in ["lockout", "restoration"]:
+                    phase_stages = stages_dict.get(phase_name, [])
+                    for s in phase_stages:
+                        s_id = s.get("stage_id")
+                        if not s_id:
                             import uuid
-                            a_id = f"act_{uuid.uuid4().hex[:6]}"
-                            a["action_id"] = a_id
+                            s_id = f"stg_{uuid.uuid4().hex[:6]}"
+                            s["stage_id"] = s_id
                             
-                        desc_key = f"edit_a_desc_{s_id}_{a_id}"
-                        prompt_key = f"edit_a_prompt_{s_id}_{a_id}"
-                        check_key = f"edit_a_check_{s_id}_{a_id}"
-                        
-                        if desc_key in st.session_state:
-                            a["description"] = st.session_state[desc_key]
-                        if prompt_key in st.session_state:
-                            a["vision_prompt"] = st.session_state[prompt_key]
-                        if check_key in st.session_state:
-                            a["completion_check"] = st.session_state[check_key]
+                        title_key = f"edit_s_title_{s_id}"
+                        if title_key in st.session_state:
+                            s["title"] = st.session_state[title_key]
+                            
+                        for a in s.get("actions", []):
+                            a_id = a.get("action_id")
+                            if not a_id:
+                                import uuid
+                                a_id = f"act_{uuid.uuid4().hex[:6]}"
+                                a["action_id"] = a_id
+                                
+                            desc_key = f"edit_a_desc_{s_id}_{a_id}"
+                            prompt_key = f"edit_a_prompt_{s_id}_{a_id}"
+                            check_key = f"edit_a_check_{s_id}_{a_id}"
+                            
+                            if desc_key in st.session_state:
+                                a["description"] = st.session_state[desc_key]
+                            if prompt_key in st.session_state:
+                                a["vision_prompt"] = st.session_state[prompt_key]
+                            if check_key in st.session_state:
+                                a["completion_check"] = st.session_state[check_key]
+                                
+                            # Spatial guide sync
+                            if "spatial_guide" not in a:
+                                a["spatial_guide"] = {
+                                    "hologram_type": "arrow",
+                                    "pos_x": 0.0,
+                                    "pos_y": 0.0,
+                                    "pos_z": 0.0,
+                                    "rot_x": 0.0,
+                                    "rot_y": 0.0,
+                                    "rot_z": 0.0
+                                }
+                            spatial = a["spatial_guide"]
+                            
+                            holo_type_key = f"edit_a_holo_type_{s_id}_{a_id}"
+                            pos_x_key = f"edit_a_pos_x_{s_id}_{a_id}"
+                            pos_y_key = f"edit_a_pos_y_{s_id}_{a_id}"
+                            pos_z_key = f"edit_a_pos_z_{s_id}_{a_id}"
+                            rot_x_key = f"edit_a_rot_x_{s_id}_{a_id}"
+                            rot_y_key = f"edit_a_rot_y_{s_id}_{a_id}"
+                            rot_z_key = f"edit_a_rot_z_{s_id}_{a_id}"
+                            
+                            if holo_type_key in st.session_state:
+                                spatial["hologram_type"] = st.session_state[holo_type_key]
+                            if pos_x_key in st.session_state:
+                                spatial["pos_x"] = st.session_state[pos_x_key]
+                            if pos_y_key in st.session_state:
+                                spatial["pos_y"] = st.session_state[pos_y_key]
+                            if pos_z_key in st.session_state:
+                                spatial["pos_z"] = st.session_state[pos_z_key]
+                            if rot_x_key in st.session_state:
+                                spatial["rot_x"] = st.session_state[rot_x_key]
+                            if rot_y_key in st.session_state:
+                                spatial["rot_y"] = st.session_state[rot_y_key]
+                            if rot_z_key in st.session_state:
+                                spatial["rot_z"] = st.session_state[rot_z_key]
 
-                # 2. Rendu et Contrôles
-                for s_idx, s in enumerate(stages):
-                    s_id = s.get("stage_id")
-                    
-                    # En-tête de l'étape avec boutons de contrôle
-                    col_title, col_ctrls = st.columns([3.8, 1.2])
-                    with col_title:
-                        st.markdown(f"<p style='font-size:0.88rem;font-weight:700;color:#0F172A;margin-top:0.6rem;margin-bottom:0.4rem;'><i class='fa-solid fa-folder-open' style='color:#64748B;margin-right:6px;'></i> Étape {s_idx + 1} : {s.get('title')} <span style='font-size:0.75rem;font-weight:500;color:#64748B;'>({s.get('type')})</span></p>", unsafe_allow_html=True)
-                    with col_ctrls:
-                        c_up, c_down, c_del = st.columns(3)
-                        with c_up:
-                            if st.button("▲", key=f"up_{s_id}", disabled=(s_idx == 0), use_container_width=True):
-                                stages[s_idx], stages[s_idx - 1] = stages[s_idx - 1], stages[s_idx]
-                                st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                st.rerun()
-                        with c_down:
-                            if st.button("▼", key=f"down_{s_id}", disabled=(s_idx == len(stages) - 1), use_container_width=True):
-                                stages[s_idx], stages[s_idx + 1] = stages[s_idx + 1], stages[s_idx]
-                                st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                st.rerun()
-                        with c_del:
-                            if st.button("🗑️", key=f"del_{s_id}", use_container_width=True):
-                                stages.pop(s_idx)
-                                st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                st.rerun()
-                                
-                    # Paramètres de l'étape
-                    col_s_name, col_s_type = st.columns([3, 1])
-                    with col_s_name:
-                        st.text_input("Titre de l'étape", value=s.get("title"), key=f"edit_s_title_{s_id}")
-                    with col_s_type:
-                        st.selectbox(
-                            "Type", 
-                            options=["consignation", "deconsignation"], 
-                            index=0 if s.get("type") == "consignation" else 1, 
-                            key=f"edit_s_type_{s_id}"
-                        )
-                        
-                    # Actions de l'étape
-                    actions = s.get("actions", [])
-                    for a_idx, a in enumerate(actions):
-                        a_id = a.get("action_id")
-                        with st.container(border=True):
-                            col_act_title, col_act_ctrls = st.columns([3.5, 1.5])
-                            with col_act_title:
-                                st.markdown(f"<span style='font-size:0.75rem;font-weight:600;color:#475569;'><i class='fa-solid fa-clipboard-check' style='color:#D4AF37;margin-right:6px;'></i> Action {s_idx + 1}.{a_idx + 1} (ID: {a_id})</span>", unsafe_allow_html=True)
-                            with col_act_ctrls:
-                                ca_up, ca_down, ca_del = st.columns(3)
-                                with ca_up:
-                                    if st.button("▲", key=f"up_act_{s_id}_{a_id}", disabled=(a_idx == 0), use_container_width=True):
-                                        actions[a_idx], actions[a_idx - 1] = actions[a_idx - 1], actions[a_idx]
-                                        st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                        st.rerun()
-                                with ca_down:
-                                    if st.button("▼", key=f"down_act_{s_id}_{a_id}", disabled=(a_idx == len(actions) - 1), use_container_width=True):
-                                        actions[a_idx], actions[a_idx + 1] = actions[a_idx + 1], actions[a_idx]
-                                        st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                        st.rerun()
-                                with ca_del:
-                                    if st.button("🗑️", key=f"del_act_{s_id}_{a_id}", use_container_width=True):
-                                        actions.pop(a_idx)
-                                        st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                                        st.rerun()
-                                    
-                            col_a1, col_a2 = st.columns([2, 1])
-                            with col_a1:
-                                st.text_area(
-                                    "Description de l'action", 
-                                    value=a.get("description"), 
-                                    key=f"edit_a_desc_{s_id}_{a_id}", 
-                                    height=85
-                                )
-                            with col_a2:
-                                st.text_input(
-                                    "Détection YOLO (anglais)", 
-                                    value=a.get("vision_prompt"), 
-                                    key=f"edit_a_prompt_{s_id}_{a_id}"
-                                )
-                                st.selectbox(
-                                    "Mode de contrôle", 
-                                    options=["vision_detection", "inverse_vision_absence"], 
-                                    index=0 if a.get("completion_check") == "vision_detection" else 1, 
-                                    key=f"edit_a_check_{s_id}_{a_id}"
-                                )
-                                
-                    # Ajouter une action dans l'étape
-                    if st.button("➕ Ajouter une action", key=f"add_act_{s_id}", use_container_width=True):
-                        import uuid
-                        new_act_id = f"act_{uuid.uuid4().hex[:6]}"
-                        actions.append({
-                            "action_id": new_act_id,
-                            "description": "Nouvelle action à réaliser",
-                            "vision_prompt": "lock",
-                            "completion_check": "vision_detection"
-                        })
-                        st.session_state["generated_loto_json"]["workflow_stages"] = stages
-                        st.rerun()
-                        
-                    st.write("---")
+                # 2. Rendu des deux phases hermétiques
                 
-                # 3. Ajouter une étape globale
-                if st.button("➕ Ajouter une Étape", key="add_new_stage_btn", use_container_width=True):
-                    import uuid
-                    new_stage_id = f"stg_{uuid.uuid4().hex[:6]}"
-                    new_stage = {
-                        "stage_id": new_stage_id,
-                        "type": "consignation",
-                        "title": "Nouvelle Étape",
-                        "actions": [
-                            {
+                # --- PHASE 1 : CONSIGNATION (LOCKOUT) ---
+                st.markdown("<p style='font-size:1rem;font-weight:700;color:#0F172A;border-bottom:2px solid #E2E8F0;padding-bottom:6px;margin-top:1.2rem;'>🔒 PHASE 1 : CONSIGNATION (LOCKOUT)</p>", unsafe_allow_html=True)
+                if not lockout_stages:
+                    st.info("Aucun module de consignation défini.")
+                else:
+                    for s_idx, s in enumerate(lockout_stages):
+                        s_id = s.get("stage_id")
+                        
+                        col_title, col_ctrls = st.columns([3.8, 1.2])
+                        with col_title:
+                            st.markdown(f"<p style='font-size:0.88rem;font-weight:700;color:#0F172A;margin-top:0.6rem;margin-bottom:0.4rem;'><i class='fa-solid fa-folder-open' style='color:#64748B;margin-right:6px;'></i> Module {s_idx + 1} : {s.get('title')}</p>", unsafe_allow_html=True)
+                        with col_ctrls:
+                            c_up, c_down, c_del = st.columns(3)
+                            with c_up:
+                                if st.button("▲", key=f"up_lock_{s_id}", disabled=(s_idx == 0), use_container_width=True):
+                                    lockout_stages[s_idx], lockout_stages[s_idx - 1] = lockout_stages[s_idx - 1], lockout_stages[s_idx]
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                    st.rerun()
+                            with c_down:
+                                if st.button("▼", key=f"down_lock_{s_id}", disabled=(s_idx == len(lockout_stages) - 1), use_container_width=True):
+                                    lockout_stages[s_idx], lockout_stages[s_idx + 1] = lockout_stages[s_idx + 1], lockout_stages[s_idx]
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                    st.rerun()
+                            with c_del:
+                                if st.button("🗑️", key=f"del_lock_{s_id}", use_container_width=True):
+                                    lockout_stages.pop(s_idx)
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                    st.rerun()
+                                    
+                        st.text_input("Titre du module", value=s.get("title"), key=f"edit_s_title_{s_id}")
+                        
+                        # Actions
+                        actions = s.get("actions", [])
+                        for a_idx, a in enumerate(actions):
+                            a_id = a.get("action_id")
+                            with st.container(border=True):
+                                col_act_title, col_act_ctrls = st.columns([3.5, 1.5])
+                                with col_act_title:
+                                    st.markdown(f"<span style='font-size:0.75rem;font-weight:600;color:#475569;'><i class='fa-solid fa-clipboard-check' style='color:#D4AF37;margin-right:6px;'></i> Action {s_idx + 1}.{a_idx + 1} (ID: {a_id})</span>", unsafe_allow_html=True)
+                                with col_act_ctrls:
+                                    ca_up, ca_down, ca_del = st.columns(3)
+                                    with ca_up:
+                                        if st.button("▲", key=f"up_act_lock_{s_id}_{a_id}", disabled=(a_idx == 0), use_container_width=True):
+                                            actions[a_idx], actions[a_idx - 1] = actions[a_idx - 1], actions[a_idx]
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                            st.rerun()
+                                    with ca_down:
+                                        if st.button("▼", key=f"down_act_lock_{s_id}_{a_id}", disabled=(a_idx == len(actions) - 1), use_container_width=True):
+                                            actions[a_idx], actions[a_idx + 1] = actions[a_idx + 1], actions[a_idx]
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                            st.rerun()
+                                    with ca_del:
+                                        if st.button("🗑️", key=f"del_act_lock_{s_id}_{a_id}", use_container_width=True):
+                                            actions.pop(a_idx)
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                                            st.rerun()
+                                            
+                                col_a1, col_a2 = st.columns([2, 1])
+                                with col_a1:
+                                    st.text_area("Description de l'action", value=a.get("description"), key=f"edit_a_desc_{s_id}_{a_id}", height=85)
+                                with col_a2:
+                                    st.text_input("Détection YOLO (anglais)", value=a.get("vision_prompt"), key=f"edit_a_prompt_{s_id}_{a_id}")
+                                    st.selectbox("Mode de contrôle", options=["vision_detection", "inverse_vision_absence"], index=0 if a.get("completion_check") == "vision_detection" else 1, key=f"edit_a_check_{s_id}_{a_id}")
+                                    
+                                # Spatial Guide Expander
+                                spatial = a.get("spatial_guide", {})
+                                with st.expander("🌐 Positionnement Spatial Holographique (AR)"):
+                                    uploaded_anchors = st.session_state.get("uploaded_anchors", {})
+                                    if uploaded_anchors:
+                                        anchor_keys = list(uploaded_anchors.keys())
+                                        curr_anchor = "Aucun"
+                                        for k, v in uploaded_anchors.items():
+                                            if (abs(float(spatial.get("pos_x", 0.0)) - float(v.get("pos_x", 0.0))) < 0.001 and 
+                                                abs(float(spatial.get("pos_y", 0.0)) - float(v.get("pos_y", 0.0))) < 0.001 and 
+                                                abs(float(spatial.get("pos_z", 0.0)) - float(v.get("pos_z", 0.0))) < 0.001):
+                                                curr_anchor = k
+                                                break
+                                                
+                                        selected_anchor = st.selectbox(
+                                            "🔗 Organe calibré lié",
+                                            options=["Aucun"] + anchor_keys,
+                                            index=0 if curr_anchor == "Aucun" else anchor_keys.index(curr_anchor) + 1,
+                                            key=f"link_anchor_lock_{s_id}_{a_id}"
+                                        )
+                                        
+                                        if selected_anchor != "Aucun" and selected_anchor != curr_anchor:
+                                            anchor_val = uploaded_anchors[selected_anchor]
+                                            spatial["hologram_type"] = anchor_val.get("hologram_type", "arrow")
+                                            spatial["pos_x"] = float(anchor_val.get("pos_x", 0.0))
+                                            spatial["pos_y"] = float(anchor_val.get("pos_y", 0.0))
+                                            spatial["pos_z"] = float(anchor_val.get("pos_z", 0.0))
+                                            spatial["rot_x"] = float(anchor_val.get("rot_x", 0.0))
+                                            spatial["rot_y"] = float(anchor_val.get("rot_y", 0.0))
+                                            spatial["rot_z"] = float(anchor_val.get("rot_z", 0.0))
+                                            
+                                            st.session_state[f"edit_a_holo_type_{s_id}_{a_id}"] = spatial["hologram_type"]
+                                            st.session_state[f"edit_a_pos_x_{s_id}_{a_id}"] = spatial["pos_x"]
+                                            st.session_state[f"edit_a_pos_y_{s_id}_{a_id}"] = spatial["pos_y"]
+                                            st.session_state[f"edit_a_pos_z_{s_id}_{a_id}"] = spatial["pos_z"]
+                                            st.session_state[f"edit_a_rot_x_{s_id}_{a_id}"] = spatial["rot_x"]
+                                            st.session_state[f"edit_a_rot_y_{s_id}_{a_id}"] = spatial["rot_y"]
+                                            st.session_state[f"edit_a_rot_z_{s_id}_{a_id}"] = spatial["rot_z"]
+                                            st.rerun()
+                                            
+                                    show_manual_coords = st.checkbox("🛠️ Ajuster manuellement les offsets 3D", value=False, key=f"show_manual_lock_{s_id}_{a_id}")
+                                    if show_manual_coords:
+                                        holo_options = ["arrow", "ring", "cube", "checkmark", "warning_icon"]
+                                        curr_holo = spatial.get("hologram_type", "arrow")
+                                        holo_idx = holo_options.index(curr_holo) if curr_holo in holo_options else 0
+                                        
+                                        st.selectbox("Type d'hologramme 3D", options=holo_options, index=holo_idx, key=f"edit_a_holo_type_{s_id}_{a_id}")
+                                        
+                                        st.markdown("<p style='font-size:0.75rem;font-weight:600;margin-bottom:0.2rem;'>Offsets de Position (mètres)</p>", unsafe_allow_html=True)
+                                        col_px, col_py, col_pz = st.columns(3)
+                                        with col_px:
+                                            st.number_input("Axe X", value=float(spatial.get("pos_x", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_x_{s_id}_{a_id}")
+                                        with col_py:
+                                            st.number_input("Axe Y", value=float(spatial.get("pos_y", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_y_{s_id}_{a_id}")
+                                        with col_pz:
+                                            st.number_input("Axe Z", value=float(spatial.get("pos_z", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_z_{s_id}_{a_id}")
+                                            
+                                        st.markdown("<p style='font-size:0.75rem;font-weight:600;margin-bottom:0.2rem;'>Orientation / Rotation (degrés)</p>", unsafe_allow_html=True)
+                                        col_rx, col_ry, col_rz = st.columns(3)
+                                        with col_rx:
+                                            st.number_input("Rot X", value=float(spatial.get("rot_x", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_x_{s_id}_{a_id}")
+                                        with col_ry:
+                                            st.number_input("Rot Y", value=float(spatial.get("rot_y", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_y_{s_id}_{a_id}")
+                                        with col_rz:
+                                            st.number_input("Rot Z", value=float(spatial.get("rot_z", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_z_{s_id}_{a_id}")
+                                    else:
+                                        st.markdown(f"""
+                                        <div style="font-size: 0.78rem; color: #475569; padding: 0.4rem 0.6rem; background-color: #F8FAFC; border-radius: 6px; border: 1px solid #E2E8F0; margin-top: 0.5rem;">
+                                            <b>Hologramme :</b> {spatial.get('hologram_type', 'arrow')}<br>
+                                            <b>Position :</b> ({spatial.get('pos_x', 0.0)}, {spatial.get('pos_y', 0.0)}, {spatial.get('pos_z', 0.0)})<br>
+                                            <b>Rotation :</b> ({spatial.get('rot_x', 0.0)}, {spatial.get('rot_y', 0.0)}, {spatial.get('rot_z', 0.0)})
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        
+                        if st.button("➕ Ajouter une action", key=f"add_act_lock_{s_id}", use_container_width=True):
+                            import uuid
+                            actions.append({
                                 "action_id": f"act_{uuid.uuid4().hex[:6]}",
                                 "description": "Nouvelle action à réaliser",
-                                "vision_prompt": "red lever",
-                                "completion_check": "vision_detection"
+                                "vision_prompt": "lock",
+                                "completion_check": "vision_detection",
+                                "spatial_guide": {
+                                    "hologram_type": "arrow",
+                                    "pos_x": 0.0,
+                                    "pos_y": 0.0,
+                                    "pos_z": 0.0,
+                                    "rot_x": 0.0,
+                                    "rot_y": 0.0,
+                                    "rot_z": 0.0
+                                }
+                            })
+                            st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
+                            st.rerun()
+                        st.write("---")
+                        
+                if st.button("➕ Ajouter un Module de Consignation", key="add_lockout_stage_btn", use_container_width=True):
+                    import uuid
+                    lockout_stages.append({
+                        "stage_id": f"stg_{uuid.uuid4().hex[:6]}",
+                        "title": "Nouveau Module de Consignation",
+                        "actions": [{
+                            "action_id": f"act_{uuid.uuid4().hex[:6]}",
+                            "description": "Nouvelle action à réaliser",
+                            "vision_prompt": "lock",
+                            "completion_check": "vision_detection",
+                            "spatial_guide": {
+                                "hologram_type": "arrow",
+                                "pos_x": 0.0,
+                                "pos_y": 0.0,
+                                "pos_z": 0.0,
+                                "rot_x": 0.0,
+                                "rot_y": 0.0,
+                                "rot_z": 0.0
                             }
-                        ]
-                    }
-                    stages.append(new_stage)
-                    st.session_state["generated_loto_json"]["workflow_stages"] = stages
+                        }]
+                    })
+                    st.session_state["generated_loto_json"]["workflow_stages"]["lockout"] = lockout_stages
                     st.rerun()
-                    
+
+                # --- PHASE 2 : DÉCONSIGNATION (RESTORATION) ---
+                st.markdown("<p style='font-size:1rem;font-weight:700;color:#0F172A;border-bottom:2px solid #E2E8F0;padding-bottom:6px;margin-top:2.5rem;'>🔓 PHASE 2 : DÉCONSIGNATION (RESTORATION)</p>", unsafe_allow_html=True)
+                if not restoration_stages:
+                    st.info("Aucun module de déconsignation défini.")
+                else:
+                    for s_idx, s in enumerate(restoration_stages):
+                        s_id = s.get("stage_id")
+                        
+                        col_title, col_ctrls = st.columns([3.8, 1.2])
+                        with col_title:
+                            st.markdown(f"<p style='font-size:0.88rem;font-weight:700;color:#0F172A;margin-top:0.6rem;margin-bottom:0.4rem;'><i class='fa-solid fa-folder-open' style='color:#64748B;margin-right:6px;'></i> Module {s_idx + 1} : {s.get('title')}</p>", unsafe_allow_html=True)
+                        with col_ctrls:
+                            c_up, c_down, c_del = st.columns(3)
+                            with c_up:
+                                if st.button("▲", key=f"up_rest_{s_id}", disabled=(s_idx == 0), use_container_width=True):
+                                    restoration_stages[s_idx], restoration_stages[s_idx - 1] = restoration_stages[s_idx - 1], restoration_stages[s_idx]
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                    st.rerun()
+                            with c_down:
+                                if st.button("▼", key=f"down_rest_{s_id}", disabled=(s_idx == len(restoration_stages) - 1), use_container_width=True):
+                                    restoration_stages[s_idx], restoration_stages[s_idx + 1] = restoration_stages[s_idx + 1], restoration_stages[s_idx]
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                    st.rerun()
+                            with c_del:
+                                if st.button("🗑️", key=f"del_rest_{s_id}", use_container_width=True):
+                                    restoration_stages.pop(s_idx)
+                                    st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                    st.rerun()
+                                    
+                        st.text_input("Titre du module", value=s.get("title"), key=f"edit_s_title_{s_id}")
+                        
+                        # Actions
+                        actions = s.get("actions", [])
+                        for a_idx, a in enumerate(actions):
+                            a_id = a.get("action_id")
+                            with st.container(border=True):
+                                col_act_title, col_act_ctrls = st.columns([3.5, 1.5])
+                                with col_act_title:
+                                    st.markdown(f"<span style='font-size:0.75rem;font-weight:600;color:#475569;'><i class='fa-solid fa-clipboard-check' style='color:#D4AF37;margin-right:6px;'></i> Action {s_idx + 1}.{a_idx + 1} (ID: {a_id})</span>", unsafe_allow_html=True)
+                                with col_act_ctrls:
+                                    ca_up, ca_down, ca_del = st.columns(3)
+                                    with ca_up:
+                                        if st.button("▲", key=f"up_act_rest_{s_id}_{a_id}", disabled=(a_idx == 0), use_container_width=True):
+                                            actions[a_idx], actions[a_idx - 1] = actions[a_idx - 1], actions[a_idx]
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                            st.rerun()
+                                    with ca_down:
+                                        if st.button("▼", key=f"down_act_rest_{s_id}_{a_id}", disabled=(a_idx == len(actions) - 1), use_container_width=True):
+                                            actions[a_idx], actions[a_idx + 1] = actions[a_idx + 1], actions[a_idx]
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                            st.rerun()
+                                    with ca_del:
+                                        if st.button("🗑️", key=f"del_act_rest_{s_id}_{a_id}", use_container_width=True):
+                                            actions.pop(a_idx)
+                                            st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                                            st.rerun()
+                                            
+                                col_a1, col_a2 = st.columns([2, 1])
+                                with col_a1:
+                                    st.text_area("Description de l'action", value=a.get("description"), key=f"edit_a_desc_{s_id}_{a_id}", height=85)
+                                with col_a2:
+                                    st.text_input("Détection YOLO (anglais)", value=a.get("vision_prompt"), key=f"edit_a_prompt_{s_id}_{a_id}")
+                                    st.selectbox("Mode de contrôle", options=["vision_detection", "inverse_vision_absence"], index=0 if a.get("completion_check") == "vision_detection" else 1, key=f"edit_a_check_{s_id}_{a_id}")
+                                    
+                                # Spatial Guide Expander
+                                spatial = a.get("spatial_guide", {})
+                                with st.expander("🌐 Positionnement Spatial Holographique (AR)"):
+                                    uploaded_anchors = st.session_state.get("uploaded_anchors", {})
+                                    if uploaded_anchors:
+                                        anchor_keys = list(uploaded_anchors.keys())
+                                        curr_anchor = "Aucun"
+                                        for k, v in uploaded_anchors.items():
+                                            if (abs(float(spatial.get("pos_x", 0.0)) - float(v.get("pos_x", 0.0))) < 0.001 and 
+                                                abs(float(spatial.get("pos_y", 0.0)) - float(v.get("pos_y", 0.0))) < 0.001 and 
+                                                abs(float(spatial.get("pos_z", 0.0)) - float(v.get("pos_z", 0.0))) < 0.001):
+                                                curr_anchor = k
+                                                break
+                                                
+                                        selected_anchor = st.selectbox(
+                                            "🔗 Organe calibré lié",
+                                            options=["Aucun"] + anchor_keys,
+                                            index=0 if curr_anchor == "Aucun" else anchor_keys.index(curr_anchor) + 1,
+                                            key=f"link_anchor_rest_{s_id}_{a_id}"
+                                        )
+                                        
+                                        if selected_anchor != "Aucun" and selected_anchor != curr_anchor:
+                                            anchor_val = uploaded_anchors[selected_anchor]
+                                            spatial["hologram_type"] = anchor_val.get("hologram_type", "arrow")
+                                            spatial["pos_x"] = float(anchor_val.get("pos_x", 0.0))
+                                            spatial["pos_y"] = float(anchor_val.get("pos_y", 0.0))
+                                            spatial["pos_z"] = float(anchor_val.get("pos_z", 0.0))
+                                            spatial["rot_x"] = float(anchor_val.get("rot_x", 0.0))
+                                            spatial["rot_y"] = float(anchor_val.get("rot_y", 0.0))
+                                            spatial["rot_z"] = float(anchor_val.get("rot_z", 0.0))
+                                            
+                                            st.session_state[f"edit_a_holo_type_{s_id}_{a_id}"] = spatial["hologram_type"]
+                                            st.session_state[f"edit_a_pos_x_{s_id}_{a_id}"] = spatial["pos_x"]
+                                            st.session_state[f"edit_a_pos_y_{s_id}_{a_id}"] = spatial["pos_y"]
+                                            st.session_state[f"edit_a_pos_z_{s_id}_{a_id}"] = spatial["pos_z"]
+                                            st.session_state[f"edit_a_rot_x_{s_id}_{a_id}"] = spatial["rot_x"]
+                                            st.session_state[f"edit_a_rot_y_{s_id}_{a_id}"] = spatial["rot_y"]
+                                            st.session_state[f"edit_a_rot_z_{s_id}_{a_id}"] = spatial["rot_z"]
+                                            st.rerun()
+                                            
+                                    show_manual_coords = st.checkbox("🛠️ Ajuster manuellement les offsets 3D", value=False, key=f"show_manual_rest_{s_id}_{a_id}")
+                                    if show_manual_coords:
+                                        holo_options = ["arrow", "ring", "cube", "checkmark", "warning_icon"]
+                                        curr_holo = spatial.get("hologram_type", "arrow")
+                                        holo_idx = holo_options.index(curr_holo) if curr_holo in holo_options else 0
+                                        
+                                        st.selectbox("Type d'hologramme 3D", options=holo_options, index=holo_idx, key=f"edit_a_holo_type_{s_id}_{a_id}")
+                                        
+                                        st.markdown("<p style='font-size:0.75rem;font-weight:600;margin-bottom:0.2rem;'>Offsets de Position (mètres)</p>", unsafe_allow_html=True)
+                                        col_px, col_py, col_pz = st.columns(3)
+                                        with col_px:
+                                            st.number_input("Axe X", value=float(spatial.get("pos_x", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_x_{s_id}_{a_id}")
+                                        with col_py:
+                                            st.number_input("Axe Y", value=float(spatial.get("pos_y", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_y_{s_id}_{a_id}")
+                                        with col_pz:
+                                            st.number_input("Axe Z", value=float(spatial.get("pos_z", 0.0)), step=0.05, format="%.2f", key=f"edit_a_pos_z_{s_id}_{a_id}")
+                                            
+                                        st.markdown("<p style='font-size:0.75rem;font-weight:600;margin-bottom:0.2rem;'>Orientation / Rotation (degrés)</p>", unsafe_allow_html=True)
+                                        col_rx, col_ry, col_rz = st.columns(3)
+                                        with col_rx:
+                                            st.number_input("Rot X", value=float(spatial.get("rot_x", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_x_{s_id}_{a_id}")
+                                        with col_ry:
+                                            st.number_input("Rot Y", value=float(spatial.get("rot_y", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_y_{s_id}_{a_id}")
+                                        with col_rz:
+                                            st.number_input("Rot Z", value=float(spatial.get("rot_z", 0.0)), step=5.0, format="%.1f", key=f"edit_a_rot_z_{s_id}_{a_id}")
+                                    else:
+                                        st.markdown(f"""
+                                        <div style="font-size: 0.78rem; color: #475569; padding: 0.4rem 0.6rem; background-color: #F8FAFC; border-radius: 6px; border: 1px solid #E2E8F0; margin-top: 0.5rem;">
+                                            <b>Hologramme :</b> {spatial.get('hologram_type', 'arrow')}<br>
+                                            <b>Position :</b> ({spatial.get('pos_x', 0.0)}, {spatial.get('pos_y', 0.0)}, {spatial.get('pos_z', 0.0)})<br>
+                                            <b>Rotation :</b> ({spatial.get('rot_x', 0.0)}, {spatial.get('rot_y', 0.0)}, {spatial.get('rot_z', 0.0)})
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                        
+                        if st.button("➕ Ajouter une action", key=f"add_act_rest_{s_id}", use_container_width=True):
+                            import uuid
+                            actions.append({
+                                "action_id": f"act_{uuid.uuid4().hex[:6]}",
+                                "description": "Nouvelle action à réaliser",
+                                "vision_prompt": "lock",
+                                "completion_check": "vision_detection",
+                                "spatial_guide": {
+                                    "hologram_type": "arrow",
+                                    "pos_x": 0.0,
+                                    "pos_y": 0.0,
+                                    "pos_z": 0.0,
+                                    "rot_x": 0.0,
+                                    "rot_y": 0.0,
+                                    "rot_z": 0.0
+                                }
+                            })
+                            st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                            st.rerun()
+                        st.write("---")
+                        
+                if st.button("➕ Ajouter un Module de Déconsignation", key="add_restoration_stage_btn", use_container_width=True):
+                    import uuid
+                    restoration_stages.append({
+                        "stage_id": f"stg_{uuid.uuid4().hex[:6]}",
+                        "title": "Nouveau Module de Déconsignation",
+                        "actions": [{
+                            "action_id": f"act_{uuid.uuid4().hex[:6]}",
+                            "description": "Nouvelle action à réaliser",
+                            "vision_prompt": "lock",
+                            "completion_check": "vision_detection",
+                            "spatial_guide": {
+                                "hologram_type": "arrow",
+                                "pos_x": 0.0,
+                                "pos_y": 0.0,
+                                "pos_z": 0.0,
+                                "rot_x": 0.0,
+                                "rot_y": 0.0,
+                                "rot_z": 0.0
+                            }
+                        }]
+                    })
+                    st.session_state["generated_loto_json"]["workflow_stages"]["restoration"] = restoration_stages
+                    st.rerun()
+
                 st.write("---")
                 with st.expander("Spécification JSON brute de sécurité (Générée automatiquement)"):
                     st.json(proc_json)
@@ -1058,22 +1474,58 @@ elif menu == "Configuration LOTO":
                         else:
                             try:
                                 # Normaliser les IDs séquentiellement pour la base de données (et la réalité mixte AR)
-                                normalized_stages = []
-                                for s_idx, s in enumerate(stages):
+                                normalized_stages = {"lockout": [], "restoration": []}
+                                stage_counter = 1
+                                
+                                for s in lockout_stages:
                                     norm_actions = []
                                     for a_idx, a in enumerate(s.get("actions", [])):
                                         norm_actions.append({
-                                            "action_id": f"{s_idx + 1}.{a_idx + 1}",
+                                            "action_id": f"{stage_counter}.{a_idx + 1}",
                                             "description": a.get("description"),
                                             "vision_prompt": a.get("vision_prompt"),
-                                            "completion_check": a.get("completion_check")
+                                            "completion_check": a.get("completion_check"),
+                                            "spatial_guide": a.get("spatial_guide", {
+                                                "hologram_type": "arrow",
+                                                "pos_x": 0.0,
+                                                "pos_y": 0.0,
+                                                "pos_z": 0.0,
+                                                "rot_x": 0.0,
+                                                "rot_y": 0.0,
+                                                "rot_z": 0.0
+                                            })
                                         })
-                                    normalized_stages.append({
-                                        "stage_id": s_idx + 1,
-                                        "type": s.get("type"),
+                                    normalized_stages["lockout"].append({
+                                        "stage_id": stage_counter,
                                         "title": s.get("title"),
                                         "actions": norm_actions
                                     })
+                                    stage_counter += 1
+                                    
+                                for s in restoration_stages:
+                                    norm_actions = []
+                                    for a_idx, a in enumerate(s.get("actions", [])):
+                                        norm_actions.append({
+                                            "action_id": f"{stage_counter}.{a_idx + 1}",
+                                            "description": a.get("description"),
+                                            "vision_prompt": a.get("vision_prompt"),
+                                            "completion_check": a.get("completion_check"),
+                                            "spatial_guide": a.get("spatial_guide", {
+                                                "hologram_type": "arrow",
+                                                "pos_x": 0.0,
+                                                "pos_y": 0.0,
+                                                "pos_z": 0.0,
+                                                "rot_x": 0.0,
+                                                "rot_y": 0.0,
+                                                "rot_z": 0.0
+                                            })
+                                        })
+                                    normalized_stages["restoration"].append({
+                                        "stage_id": stage_counter,
+                                        "title": s.get("title"),
+                                        "actions": norm_actions
+                                    })
+                                    stage_counter += 1
                                     
                                 data_to_upsert = {
                                     "machine_id": proc_json.get("machine_id"),
@@ -1088,7 +1540,7 @@ elif menu == "Configuration LOTO":
                                 proc_json["workflow_stages"] = normalized_stages
                                 st.session_state["generated_loto_json"] = proc_json
                                 
-                                st.success("Procédure sauvegardée et verrouillée dans Supabase !")
+                                st.session_state["save_success"] = "Procédure sauvegardée et verrouillée dans Supabase !"
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Erreur d'enregistrement : {e}")
@@ -1147,12 +1599,16 @@ elif menu == "Configuration LOTO":
                             for s_idx, s in enumerate(lockout_stages):
                                 st.markdown(f"<p style='font-size:0.8rem;font-weight:600;color:#475569;margin-top:0.8rem;margin-bottom:0.4rem;'>Module {s_idx + 1} : {s.get('title')}</p>", unsafe_allow_html=True)
                                 for a in s.get("actions", []):
+                                    sg = a.get("spatial_guide", {})
+                                    sg_text = ""
+                                    if sg:
+                                        sg_text = f" | hologramme : <code>{sg.get('hologram_type', 'arrow')}</code> (pos: <code>{sg.get('pos_x', 0.0)}, {sg.get('pos_y', 0.0)}, {sg.get('pos_z', 0.0)}</code>, rot: <code>{sg.get('rot_x', 0.0)}, {sg.get('rot_y', 0.0)}, {sg.get('rot_z', 0.0)}</code>)"
                                     st.markdown(f"""
                                     <div class="step-card">
                                         <div class="step-badge">Action {a.get('action_id')}</div>
                                         <div class="step-content">
                                             <div class="step-desc">{a.get('description')}</div>
-                                            <div class="step-prompt">Détection visuelle : <code>{a.get('vision_prompt')}</code> | validation : <code>{a.get('completion_check')}</code></div>
+                                            <div class="step-prompt">Détection visuelle : <code>{a.get('vision_prompt')}</code> | validation : <code>{a.get('completion_check')}</code>{sg_text}</div>
                                         </div>
                                     </div>
                                     """, unsafe_allow_html=True)
@@ -1164,12 +1620,16 @@ elif menu == "Configuration LOTO":
                             for s_idx, s in enumerate(restoration_stages):
                                 st.markdown(f"<p style='font-size:0.8rem;font-weight:600;color:#475569;margin-top:0.8rem;margin-bottom:0.4rem;'>Module {s_idx + 1} : {s.get('title')}</p>", unsafe_allow_html=True)
                                 for a in s.get("actions", []):
+                                    sg = a.get("spatial_guide", {})
+                                    sg_text = ""
+                                    if sg:
+                                        sg_text = f" | hologramme : <code>{sg.get('hologram_type', 'arrow')}</code> (pos: <code>{sg.get('pos_x', 0.0)}, {sg.get('pos_y', 0.0)}, {sg.get('pos_z', 0.0)}</code>, rot: <code>{sg.get('rot_x', 0.0)}, {sg.get('rot_y', 0.0)}, {sg.get('rot_z', 0.0)}</code>)"
                                     st.markdown(f"""
                                     <div class="step-card">
                                         <div class="step-badge">Action {a.get('action_id')}</div>
                                         <div class="step-content">
                                             <div class="step-desc">{a.get('description')}</div>
-                                            <div class="step-prompt">Détection visuelle : <code>{a.get('vision_prompt')}</code> | validation : <code>{a.get('completion_check')}</code></div>
+                                            <div class="step-prompt">Détection visuelle : <code>{a.get('vision_prompt')}</code> | validation : <code>{a.get('completion_check')}</code>{sg_text}</div>
                                         </div>
                                     </div>
                                     """, unsafe_allow_html=True)
@@ -1283,15 +1743,12 @@ elif menu == "Suivi des Interventions":
             st.error(f"Erreur de chargement des interventions : {e}")
     else:
         st.warning("Veuillez connecter Supabase dans l'onglet Diagnostics.")
-
 elif menu == "Diagnostics & Paramètres":
     st.markdown("### Diagnostics & Paramètres Système")
-    st.markdown("Gérez les identifiants d'API, les modèles de génération LLM, et le schéma de base de données.")
+    col_settings, _ = st.columns([1.5, 1])
 
-    col_diag1, col_diag2 = st.columns([1, 1])
-
-    with col_diag1:
-        st.markdown("<p style='font-weight:600;font-size:0.85rem;color:#0F172A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0.8rem;'>Configuration des API</p>", unsafe_allow_html=True)
+    with col_settings:
+        st.markdown("<p style='font-weight:600;font-size:0.85rem;color:#0F172A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0.8rem;'>Configuration des API & Database</p>", unsafe_allow_html=True)
         
         or_key = st.text_input("Clé API OpenRouter", value=st.session_state["openrouter_key"], type="password")
         
@@ -1326,46 +1783,3 @@ elif menu == "Diagnostics & Paramètres":
             st.session_state["supabase_key"] = sb_key
             st.success("Paramètres Supabase enregistrés dans le fichier .env !")
             st.rerun()
-
-    with col_diag2:
-        st.markdown("<p style='font-weight:600;font-size:0.85rem;color:#0F172A;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:0.8rem;'>Migration de Base de Données SQL</p>", unsafe_allow_html=True)
-        st.markdown("Exécutez ce script SQL dans l'éditeur de votre console Supabase pour initialiser les tables et les règles de sécurité RLS.")
-        
-        sql_schema = """-- Script d'initialisation SmartLOTO
-CREATE TABLE IF NOT EXISTS procedures (
-    machine_id TEXT PRIMARY KEY,
-    machine_name TEXT NOT NULL,
-    created_by_hse TEXT NOT NULL,
-    status TEXT DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED')),
-    workflow_stages JSONB NOT NULL,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS interventions (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    machine_id TEXT REFERENCES procedures(machine_id) ON DELETE CASCADE,
-    operator_name TEXT NOT NULL,
-    status TEXT DEFAULT 'IN_PROGRESS' CHECK (status IN ('IN_PROGRESS', 'COMPLETED')),
-    current_stage_id INT DEFAULT 1,
-    logs JSONB DEFAULT '[]'::jsonb,
-    signature_url TEXT,
-    pdf_report_url TEXT,
-    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    completed_at TIMESTAMP WITH TIME ZONE
-);
-
--- Activation de Row Level Security (RLS)
-ALTER TABLE procedures ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access to procedures" ON procedures FOR SELECT USING (true);
-CREATE POLICY "Allow public write access to procedures" ON procedures FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update access to procedures" ON procedures FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete access to procedures" ON procedures FOR DELETE USING (true);
-
-ALTER TABLE interventions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Allow public read access to interventions" ON interventions FOR SELECT USING (true);
-CREATE POLICY "Allow public write access to interventions" ON interventions FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update access to interventions" ON interventions FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete access to interventions" ON interventions FOR DELETE USING (true);"""
-        
-        st.code(sql_schema, language="sql")

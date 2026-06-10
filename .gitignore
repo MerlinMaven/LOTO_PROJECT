@@ -1,5 +1,84 @@
-/.env
+# ── Environment & secrets ─────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.venv/
+venv/
+env/
+.Python
+
+# Alembic compiled
+*.pyc
+
+# ── Machine learning models ───────────────────────────────────────────────────
+# Large binary models must never be committed to git.
+# Store them on a model registry (HuggingFace Hub, S3, etc.) and
+# download at deploy time.
+*.pt
+*.pth
+*.onnx
+*.ckpt
+*.safetensors
+*.bin
+
+# ── Node / Frontend ───────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+.npm
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+
+# ── OS & tooling ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/settings.json
+
+# ── Tunnel tools (ngrok, localtunnel etc.) ────────────────────────────────────
+# Never commit tunnel executables or archives to version control.
+ngrok*
+*.zip
+*.tar.gz
+*.exe
+*.msi
+
+# ── Runtime-generated files ───────────────────────────────────────────────────
+scratch_report_*.pdf
+sig_temp_*.png
+diagnostics_report.txt
+
+# ── Test / coverage ───────────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+.streamlit/secrets.toml
+
+# ── Legacy ignores (preserved) ────────────────────────────────────────────────
 /SmartLOTO.docx
 /smartloto_report.tex
 /text.txt
-/__pycache__

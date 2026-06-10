@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://smartloto.io/schemas/workflow-definition/1.0",
+  "title": "WorkflowDefinition",
+  "description": "Canonical JSON schema for a SmartLOTO procedure workflow_definition (Authoring Service format). This is the source-of-truth schema; the Field Service uses a flattened derivative.",
+  "type": "object",
+  "required": ["phases"],
+  "additionalProperties": false,
+  "properties": {
+    "phases": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/Phase" }
+    }
+  },
+  "$defs": {
+    "Phase": {
+      "type": "object",
+      "required": ["phase_id", "phase_type", "title", "stages"],
+      "additionalProperties": false,
+      "properties": {
+        "phase_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable slug, used as the first segment of step_ref (e.g. 'ph_lockout')",
+          "examples": ["ph_lockout", "ph_restoration"]
+        },
+        "phase_type": {
+          "type": "string",
+          "enum": ["lockout", "tagout", "verification", "maintenance", "restoration"],
+          "description": "Semantic type; drives ordering, AR colour coding, and OSHA section labeling"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Stage" }
+        }
+      }
+    },
+    "Stage": {
+      "type": "object",
+      "required": ["stage_id", "title", "steps"],
+      "additionalProperties": false,
+      "properties": {
+        "stage_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable slug, used as the second segment of step_ref (e.g. 'st_electrical')"
+        },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "energy_type": {
+          "type": "string",
+          "enum": ["electrical", "pneumatic", "hydraulic", "mechanical", "thermal", "chemical", "gravitational"]
+        },
+        "steps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/Step" }
+        }
+      }
+    },
+    "Step": {
+      "type": "object",
+      "required": ["step_id", "instruction"],
+      "additionalProperties": false,
+      "properties": {
+        "step_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Stable slug, used as the third segment of step_ref (e.g. 'stp_1')"
+        },
+        "instruction": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Human-readable action instruction shown to the operator in AR"
+        },
+        "validation_method": {
+          "type": "string",
+          "enum": ["vision_detection", "inverse_vision_absence", "manual_confirmation", "sensor_threshold"],
+          "default": "manual_confirmation"
+        },
+        "vision_prompt": {
+          "type": "string",
+          "description": "Zero-shot YOLO-World English prompt (required when validation_method is vision_detection or inverse_vision_absence)",
+          "examples": ["red safety padlock on circuit breaker", "main circuit breaker handle in OFF position"]
+        },
+        "safety_note": {
+          "type": "string",
+          "description": "OSHA-critical safety information displayed before the step"
+        },
+        "warnings": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Additional warnings displayed alongside the step"
+        },
+        "rollback_instruction": {
+          "type": "string",
+          "description": "Instructions for safely reversing this step if the operator needs to abort"
+        },
+        "estimated_duration_seconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tools_required": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "ppe_required": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Personal Protective Equipment required for this step"
+        },
+        "spatial_anchor_id": {
+          "type": "string",
+          "description": "Reference to an anchor in workflow_stages.anchors for AR hologram placement"
+        }
+      },
+      "if": {
+        "properties": {
+          "validation_method": {
+            "enum": ["vision_detection", "inverse_vision_absence"]
+          }
+        }
+      },
+      "then": {
+        "required": ["vision_prompt"]
+      }
+    }
+  }
+}

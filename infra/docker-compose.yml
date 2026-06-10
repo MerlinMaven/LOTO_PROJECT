@@ -1,0 +1,110 @@
+# SmartLOTO — local development stack
+#
+# Services
+#   postgres          — Authoring Service database (PostgreSQL 16)
+#   authoring-service — HSE procedure management API  :8001
+#   field-service     — Unity/AR runtime API           :8000
+#   hse-dashboard     — React HSE review UI            :3000
+#
+# Usage
+#   cp infra/.env.example infra/.env          # fill Supabase credentials
+#   docker compose -f infra/docker-compose.yml up --build
+#
+# The field-service connects to Supabase (external). Set SUPABASE_URL and
+# SUPABASE_KEY in infra/.env before starting.
+#
+# The YOLO model is bind-mounted from the project root — do not commit the
+# binary to git. Place yolov8s-worldv2.pt in the repo root.
+
+version: "3.9"
+
+networks:
+  smartloto:
+    driver: bridge
+
+volumes:
+  postgres_data:
+
+services:
+
+  # ── PostgreSQL 16 (Authoring Service database) ─────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    networks: [smartloto]
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: smartloto
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Authoring Service (FastAPI + asyncpg) ──────────────────────────────────
+  authoring-service:
+    build:
+      context: ../apps/authoring-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks: [smartloto]
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/smartloto
+      SYNC_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smartloto
+      SECRET_KEY: local-dev-secret-change-in-production
+      CORS_ORIGINS: '["http://localhost:3000","http://localhost:5173"]'
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      LOG_LEVEL: DEBUG
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  # ── Field Service (FastAPI + Supabase) ─────────────────────────────────────
+  # Requires SUPABASE_URL and SUPABASE_KEY set in infra/.env
+  field-service:
+    build:
+      context: ../apps/field-service
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    networks: [smartloto]
+    ports:
+      - "8000:8000"
+    environment:
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in infra/.env}
+      SUPABASE_KEY: ${SUPABASE_KEY:?Set SUPABASE_KEY in infra/.env}
+    volumes:
+      # Bind-mount the YOLO model from repo root — not committed to git
+      - ../yolov8s-worldv2.pt:/app/yolov8s-worldv2.pt:ro
+
+  # ── HSE Dashboard (Vite dev server) ───────────────────────────────────────
+  hse-dashboard:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0 --port 3000"
+    restart: unless-stopped
+    networks: [smartloto]
+    ports:
+      - "3000:3000"
+    depends_on:
+      authoring-service:
+        condition: service_healthy
+    environment:
+      VITE_API_BASE_URL: http://localhost:8001
+    volumes:
+      - ../apps/hse-dashboard:/app
+      # Anonymous volume prevents host node_modules from shadowing container's
+      - /app/node_modules

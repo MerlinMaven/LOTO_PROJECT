@@ -1570,21 +1570,36 @@ elif menu == "Configuration LOTO":
                                 st.session_state["selected_inspect_machine_id"] = None
                                 st.rerun()
                                 
-                            st.markdown(f"""
-                            <div style="border-left: 4px solid #D4AF37; padding: 1.5rem; border-radius: 12px; background: #FFFFFF; border-top: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; margin-top: 1rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.01), 0 2px 4px -1px rgba(0, 0, 0, 0.01);">
-                                <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #F1F5F9; padding-bottom:12px; margin-bottom:12px;">
-                                    <h3 style="margin:0; font-size:1.2rem; font-weight:700; color:#0F172A;">{selected_proc.get('machine_name')}</h3>
-                                    <span class="badge badge-approved" style="background-color: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; font-size: 0.72rem; padding: 4px 10px; border-radius: 30px;">APPROVED & LOCKED</span>
+                            col_details, col_qr = st.columns([3, 1])
+                            
+                            with col_details:
+                                st.markdown(f"""
+                                <div style="border-left: 4px solid #D4AF37; padding: 1.5rem; border-radius: 12px; background: #FFFFFF; border-top: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; margin-top: 1rem; margin-bottom: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.01), 0 2px 4px -1px rgba(0, 0, 0, 0.01);">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #F1F5F9; padding-bottom:12px; margin-bottom:12px;">
+                                        <h3 style="margin:0; font-size:1.2rem; font-weight:700; color:#0F172A;">{selected_proc.get('machine_name')}</h3>
+                                        <span class="badge badge-approved" style="background-color: #ECFDF5; color: #065F46; border: 1px solid #A7F3D0; font-size: 0.72rem; padding: 4px 10px; border-radius: 30px;">APPROVED & LOCKED</span>
+                                    </div>
+                                    <p style="font-size:0.78rem; color:#64748B; margin:0; display:flex; align-items:center; gap:12px;">
+                                        <span>Identifiant : <code style="background-color:#F1F5F9; color:#0F172A; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #E2E8F0;">{selected_proc.get('machine_id')}</code></span>
+                                        <span style="color:#E2E8F0;">•</span>
+                                        <span>HSE : <b>{selected_proc.get('created_by_hse')}</b></span>
+                                        <span style="color:#E2E8F0;">•</span>
+                                        <span>Publication : {selected_proc.get('created_at')[:10]}</span>
+                                    </p>
                                 </div>
-                                <p style="font-size:0.78rem; color:#64748B; margin:0; display:flex; align-items:center; gap:12px;">
-                                    <span>Identifiant : <code style="background-color:#F1F5F9; color:#0F172A; padding:2px 6px; border-radius:4px; font-family:monospace; border:1px solid #E2E8F0;">{selected_proc.get('machine_id')}</code></span>
-                                    <span style="color:#E2E8F0;">•</span>
-                                    <span>HSE : <b>{selected_proc.get('created_by_hse')}</b></span>
-                                    <span style="color:#E2E8F0;">•</span>
-                                    <span>Publication : {selected_proc.get('created_at')[:10]}</span>
-                                </p>
-                            </div>
-                            """, unsafe_allow_html=True)
+                                """, unsafe_allow_html=True)
+                                
+                            with col_qr:
+                                qr_data = selected_proc.get('machine_id')
+                                qr_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={qr_data}"
+                                st.markdown(f"""
+                                <div style="text-align: center; background: #FFFFFF; border: 1px solid #E2E8F0; padding: 1rem; border-radius: 12px; margin-top: 1rem; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.01);">
+                                    <p style="font-size:0.72rem; font-weight:600; text-transform:uppercase; color:#64748B; margin-bottom:8px; letter-spacing:0.5px;">Code QR Identifiant</p>
+                                    <img src="{qr_url}" alt="QR Code {qr_data}" style="width:110px; height:110px; margin-bottom:8px;"/>
+                                    <br>
+                                    <a href="{qr_url}" download="QR_{qr_data}.png" target="_blank" style="text-decoration:none; font-size:0.75rem; color:#1D4ED8; font-weight:600;"><i class="fa-solid fa-download"></i> Télécharger</a>
+                                </div>
+                                """, unsafe_allow_html=True)
                             
                             # S'assurer du format two-phase pour la lecture
                             selected_proc = convert_flat_to_twophase(selected_proc)

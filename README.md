@@ -295,7 +295,7 @@ uv pip install -r requirements.txt   # or pip install -r requirements.txt
 copy .env.example .env   # fill in SUPABASE_URL and SUPABASE_KEY
 
 # 3️⃣ Start FastAPI backend
-uvicorn backend:app --host 0.0.0.0 --port 8000
+uvicorn backend:app --host 0.0.0.0 --port 8001
 
 # 4️⃣ In a new terminal, launch Streamlit dashboard
 streamlit run app.py
@@ -371,4 +371,4 @@ All data flows are documented above; follow the diagrams and the file‑to‑fun
 
 > **⚡️ Pro tip:** Keep the `ngrok‑skip‑browser‑warning` header in place even when you switch back to LAN IP – it costs nothing and future‑proofs you for the next remote demo.
 
-Happy locking out! 🚧🔒
+

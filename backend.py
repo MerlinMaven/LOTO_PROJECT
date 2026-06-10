@@ -140,6 +140,15 @@ def read_root():
         "timestamp": datetime.now().isoformat()
     }
 
+@app.get("/procedures")
+async def list_procedures():
+    """Récupère toutes les procédures approuvées."""
+    if not db:
+        raise HTTPException(status_code=500, detail="Base de données indisponible.")
+    
+    res = db.table("procedures").select("machine_id, machine_name").eq("status", "APPROVED").execute()
+    return res.data
+
 @app.get("/procedures/{machine_id}")
 async def get_procedure(machine_id: str):
     """Récupère une procédure approuvée et figée."""

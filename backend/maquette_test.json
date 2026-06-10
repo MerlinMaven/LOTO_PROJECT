@@ -1,0 +1,105 @@
+{
+  "procedure_id": "LOTO_CARTON_POC_V1",
+  "machine_name": "SmartLOTO Cardboard Prototype",
+  "metadata": {
+    "version": "1.0",
+    "status": "draft_pending_review",
+    "created_by": "expert_hse_01",
+    "approved_by": null,
+    "created_at": "2026-06-10T18:30:00Z"
+  },
+  "steps": [
+    {
+      "step_id": 1,
+      "step_type": "physical_action",
+      "description": "Couper l'alimentation principale",
+      "operator_instruction": "Appuyer sur l'interrupteur vers le bas pour le mettre en position OFF.",
+      "state_before": ["white switch pressed up"],
+      "yolo_validation": {
+        "target_objects": ["white switch pressed down"],
+        "confidence_threshold": 0.85
+      }
+    },
+    {
+      "step_id": 2,
+      "step_type": "physical_action",
+      "description": "Isoler la source d'énergie",
+      "operator_instruction": "Retirer la pile du conteneur rouge.",
+      "state_before": ["battery inside the red holder"],
+      "yolo_validation": {
+        "target_objects": ["empty red battery holder"],
+        "confidence_threshold": 0.80
+      }
+    },
+    {
+      "step_id": 3,
+      "step_type": "physical_action",
+      "description": "Consignation (Lockout)",
+      "operator_instruction": "Placer la pile dans la Safe Box, à côté du symbole de cadenas.",
+      "state_before": ["empty safe box"],
+      "yolo_validation": {
+        "target_objects": ["battery inside the cardboard box next to the padlock drawing"],
+        "confidence_threshold": 0.80
+      }
+    },
+    {
+      "step_id": 4,
+      "step_type": "physical_action",
+      "description": "Ouverture du carter de protection",
+      "operator_instruction": "Faire glisser le carter transparent jusqu'à ce que le carré blanc coïncide avec le cercle vide.",
+      "state_before": ["white square aligned with solid black circle"],
+      "yolo_validation": {
+        "target_objects": ["white square aligned with empty circle", "transparent cover open"],
+        "confidence_threshold": 0.75
+      }
+    },
+    {
+      "step_id": 5,
+      "step_type": "human_action",
+      "description": "Intervention de maintenance",
+      "operator_instruction": "Effectuer la vérification ou le remplacement de l'ampoule.",
+      "state_before": [],
+      "yolo_validation": {
+        "target_objects": ["hand interacting with the bulb"],
+        "confidence_threshold": 0.60
+      }
+    },
+    {
+      "step_id": 6,
+      "step_type": "physical_action",
+      "description": "Fermeture du carter de protection",
+      "operator_instruction": "Refermer le carter. Le carré blanc doit coïncider avec le cercle noir plein.",
+      "state_before": ["white square aligned with empty circle"],
+      "yolo_validation": {
+        "target_objects": ["white square aligned with solid black circle", "transparent cover closed"],
+        "confidence_threshold": 0.85
+      }
+    },
+    {
+      "step_id": 7,
+      "step_type": "physical_action",
+      "description": "Remise en place de l'énergie (Vérification Polarité)",
+      "operator_instruction": "Insérer la pile dans l'emplacement sans le 'X'. S'assurer que le pôle + est sur le signe +.",
+      "state_before": ["empty red battery holder"],
+      "yolo_validation": {
+        "target_objects": [
+          "battery in the right slot of the red holder", 
+          "battery positive terminal aligned with the drawn plus sign",
+          "empty slot with X mark"
+        ],
+        "confidence_threshold": 0.70
+      }
+    },
+    {
+      "step_id": 8,
+      "step_type": "physical_action",
+      "description": "Remise en marche",
+      "operator_instruction": "Appuyer sur l'interrupteur vers le haut pour le mettre en position ON.",
+      "state_before": ["white switch pressed down"],
+      "yolo_validation": {
+        "target_objects": ["white switch pressed up"],
+        "confidence_threshold": 0.85
+      }
+    }
+  ]
+}

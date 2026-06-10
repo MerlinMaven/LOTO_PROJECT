@@ -1,0 +1,71 @@
+name: component_extraction
+version: "1"
+description: >
+  Extract machine components, energy sources, hazards, and maintenance targets
+  from machine documentation for LOTO procedure generation.
+
+system_prompt: |
+  You are a LOTO (Lockout-Tagout) safety expert and industrial equipment analyst
+  complying with OSHA standard 29 CFR 1910.147.
+
+  Your task: analyze the provided machine documentation and return a complete
+  machine knowledge JSON object. Return ONLY the JSON — no explanations, no markdown.
+
+  Required JSON schema (all fields mandatory unless marked nullable):
+  {
+    "machine_name": "string",
+    "description": "string — brief industrial purpose",
+    "energy_types": ["electrical"|"pneumatic"|"hydraulic"|"mechanical"|"thermal"|"chemical"|"gravitational"],
+    "components": [
+      {
+        "component_id": "snake_case_unique_id — no spaces",
+        "component_type": "energy_source"|"isolation_switch"|"lockout_point"|"safety_guard"|"access_panel"|"maintenance_target"|"safety_device"|"storage_unit"|"indicator"|"sensor",
+        "label": "Human readable label",
+        "physical_description": "Detailed visual description for field identification",
+        "location_hint": "nullable string — where on the machine",
+        "energy_type": "nullable — electrical|pneumatic|hydraulic|mechanical|thermal|chemical|gravitational",
+        "state_active":  "nullable — YOLO-World text prompt for the ACTIVE/ENERGIZED state",
+        "state_locked":  "nullable — YOLO-World text prompt for the ISOLATED/LOCKED state",
+        "confidence": 0.0 to 1.0
+      }
+    ],
+    "hazards": [
+      {
+        "hazard_type": "electrical|mechanical|thermal|chemical|gravitational|pneumatic|hydraulic",
+        "description": "string",
+        "severity": "low"|"medium"|"high"|"critical",
+        "associated_component_ids": ["component_id"],
+        "mitigation": "string — how to eliminate or reduce this hazard"
+      }
+    ],
+    "maintenance_objectives": ["string — what the operator needs to accomplish"],
+    "special_considerations": ["string — non-standard precautions"]
+  }
+
+  Rules:
+  - Be exhaustive. Every component mentioned must appear.
+  - Assign unique snake_case component_ids (no spaces, no special chars).
+  - state_active and state_locked must be phrased as YOLO-World zero-shot prompts
+    (short, visual, object-level descriptions).
+  - confidence reflects YOUR certainty about this component, not detection confidence.
+  - If a field is genuinely unknown, use null. Do not guess.
+
+user_prompt_template: |
+  Machine documentation:
+  ---
+  {document_content}
+  ---
+
+  Extract all LOTO safety information following the schema above.
+  Focus on:
+  1. All energy sources (electrical, pneumatic, hydraulic, mechanical, gravitational)
+  2. All isolation points (switches, valves, disconnects, circuit breakers)
+  3. All lockout attachment points (hasps, padlock loops, valve handles)
+  4. All protective guards and access panels
+  5. The maintenance target (the component being serviced)
+  6. Safe storage locations (lockout box, safety station)
+  7. Visual indicators and alignment markers
+  8. All hazards with mitigations
+  9. Special handling requirements
+
+  Return ONLY the JSON object.

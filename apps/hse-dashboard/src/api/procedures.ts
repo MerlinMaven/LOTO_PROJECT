@@ -65,4 +65,8 @@ export const proceduresApi = {
     );
     return data;
   },
+
+  async archive(procedureId: string): Promise<void> {
+    await http.delete(`/v1/procedures/${procedureId}`);
+  },
 };

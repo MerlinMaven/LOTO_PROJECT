@@ -524,6 +524,23 @@ class InterventionService:
 
     # ── Read ──────────────────────────────────────────────────────────────────
 
+    async def list_interventions(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        status_filter: InterventionStatus | None = None,
+    ) -> "PaginatedResponse[InterventionRead]":
+        from app.schemas.common import PaginatedResponse as _PR
+        filters = {"status": status_filter} if status_filter else None
+        items, total = await self.repo.list(page=page, page_size=page_size, filters=filters)
+        return _PR(
+            data=[InterventionRead.model_validate(i) for i in items],
+            total=total,
+            page=page,
+            page_size=page_size,
+        )
+
     async def get_intervention(self, intervention_id: UUID) -> InterventionRead:
         intervention = await self.repo.get_with_steps(intervention_id)
         if not intervention:

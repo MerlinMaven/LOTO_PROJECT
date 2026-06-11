@@ -46,10 +46,22 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
-    # ── Supabase Storage (for evidence photos, PDFs — Phase 3+) ───────────────
+    # ── Supabase (SUPABASE_KEY = service-role or anon key from dashboard) ────────
     SUPABASE_URL: str = ""
-    SUPABASE_SERVICE_KEY: str = ""
+    SUPABASE_KEY: str = ""
     STORAGE_BUCKET: str = "smartloto-assets"
+
+    # ── LLM providers ──────────────────────────────────────────────────────────
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_MODEL: str = "qwen/qwen-2.5-7b-instruct"
+    MISTRAL_API_KEY: str = ""
+    MISTRAL_MODEL: str = "mistral-small-latest"
+    GROQ_API_KEY: str = ""
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    # vLLM self-hosted endpoint (optional — leave blank to skip)
+    VLLM_BASE_URL: str = ""
+    VLLM_MODEL: str = "mistralai/Mistral-7B-Instruct-v0.3"
+    HF_TOKEN: str = ""
 
     # ── Pagination ────────────────────────────────────────────────────────────
     DEFAULT_PAGE_SIZE: int = 20

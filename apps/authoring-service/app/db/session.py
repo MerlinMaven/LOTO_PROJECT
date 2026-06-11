@@ -22,20 +22,30 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import NullPool
 
 from app.core.config import get_settings
 
 settings = get_settings()
 
 # ── Async engine (runtime) ────────────────────────────────────────────────────
+# Supabase uses PgBouncer in transaction mode — NullPool avoids "prepared
+# statement already exists" errors when the pooler is in front of asyncpg.
+_use_nullpool = "pooler.supabase.com" in settings.DATABASE_URL
 
 _engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.is_development,
-    pool_size=settings.DB_POOL_SIZE,
-    max_overflow=settings.DB_MAX_OVERFLOW,
-    pool_timeout=settings.DB_POOL_TIMEOUT,
-    pool_pre_ping=True,   # validate connections on checkout
+    pool_pre_ping=True,
+    **({
+        "poolclass": NullPool,
+        # PgBouncer transaction mode does not support prepared statements
+        "connect_args": {"statement_cache_size": 0},
+    } if _use_nullpool else {
+        "pool_size": settings.DB_POOL_SIZE,
+        "max_overflow": settings.DB_MAX_OVERFLOW,
+        "pool_timeout": settings.DB_POOL_TIMEOUT,
+    }),
 )
 
 AsyncSessionLocal: async_sessionmaker[AsyncSession] = async_sessionmaker(

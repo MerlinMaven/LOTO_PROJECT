@@ -14,8 +14,8 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from enum import StrEnum
-from typing import Optional
+from app.compat import StrEnum
+from typing import Optional, Any
 
 from pydantic import BaseModel, Field
 
@@ -28,7 +28,7 @@ class MessageRole(StrEnum):
 
 class Message(BaseModel):
     role: MessageRole
-    content: str
+    content: Any
 
 
 class LLMResponse(BaseModel):

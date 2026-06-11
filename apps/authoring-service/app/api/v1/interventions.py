@@ -20,10 +20,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Request, status
+from fastapi import APIRouter, Query, Request, status
 
 from app.api.deps import AuditSvcDep, CurrentUserDep, InterventionSvcDep
+from app.domain.enums import InterventionStatus
 from app.schemas.audit import AuditEventRead
+from app.schemas.common import PaginatedResponse
 from app.schemas.intervention import (
     CurrentStepContext,
     InterventionAbortRequest,
@@ -41,6 +43,20 @@ router = APIRouter()
 
 def _ip(request: Request) -> str | None:
     return request.client.host if request.client else None
+
+
+# ── List ──────────────────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=PaginatedResponse[InterventionRead])
+async def list_interventions(
+    svc: InterventionSvcDep,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    status: InterventionStatus | None = Query(None, description="Filter by lifecycle status"),
+) -> PaginatedResponse[InterventionRead]:
+    """List all interventions ordered by start time descending. Filter by status if provided."""
+    return await svc.list_interventions(page=page, page_size=page_size, status_filter=status)
 
 
 # ── Lifecycle ─────────────────────────────────────────────────────────────────

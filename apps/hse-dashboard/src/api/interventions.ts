@@ -44,7 +44,7 @@ export interface ListInterventionsParams {
 export async function listInterventions(
   params: ListInterventionsParams = {},
 ): Promise<PaginatedInterventions> {
-  const res = await http.get<PaginatedInterventions>("/api/v1/interventions", {
+  const res = await http.get<PaginatedInterventions>("/v1/interventions", {
     params: {
       page: params.page ?? 1,
       page_size: params.page_size ?? 20,

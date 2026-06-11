@@ -10,13 +10,13 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, func
+from sqlalchemy import DateTime, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 class Base(DeclarativeBase):
     """Application-wide SQLAlchemy declarative base."""
-    pass
+    metadata = MetaData(schema="authoring")
 
 
 class TimestampMixin:

@@ -7,7 +7,7 @@ and that values stored in PostgreSQL are readable strings, not opaque integers.
 
 from __future__ import annotations
 
-from enum import StrEnum
+from app.compat import StrEnum
 
 
 class EnergyType(StrEnum):

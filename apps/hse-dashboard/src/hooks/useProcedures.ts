@@ -69,3 +69,13 @@ export function usePublishProcedure(procedureId: string) {
     },
   });
 }
+
+export function useArchiveProcedure() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (procedureId: string) => proceduresApi.archive(procedureId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: procedureKeys.all });
+    },
+  });
+}

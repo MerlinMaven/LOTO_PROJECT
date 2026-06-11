@@ -93,7 +93,9 @@ class DraftPublisher:
         )
 
         result.job.status = GenerationJobStatus.COMPLETED
-        result.job.procedure_version_id = str(procedure_read.versions[0].id)
+        # versions[0] may be empty before commit; fall back gracefully
+        if procedure_read.versions:
+            result.job.procedure_version_id = str(procedure_read.versions[0].id)
 
         logger.info(
             "draft_publisher_stored",

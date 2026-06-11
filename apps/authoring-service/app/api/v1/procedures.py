@@ -87,6 +87,29 @@ async def get_procedure(procedure_id: UUID, svc: ProcedureSvcDep) -> ProcedureRe
     return await svc.get_procedure(procedure_id)
 
 
+@router.delete(
+    "/{procedure_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Archive (soft-delete) a procedure",
+)
+async def archive_procedure(
+    procedure_id: UUID,
+    request: Request,
+    svc: ProcedureSvcDep,
+    user: CurrentUserDep,
+) -> None:
+    """
+    Soft-deletes a procedure by archiving all its versions.
+    The procedure envelope is retained for OSHA 1910.147 audit compliance.
+    Published procedures become archived; drafts/approved versions are discarded.
+    """
+    await svc.archive_procedure(
+        procedure_id,
+        actor_id=user.identifier,
+        ip_address=request.client.host if request.client else None,
+    )
+
+
 @router.patch(
     "/{procedure_id}/draft",
     response_model=ProcedureVersionRead,

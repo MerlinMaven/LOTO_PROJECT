@@ -27,6 +27,7 @@ from typing import Optional
 from app.core.logging import get_logger
 from app.generation.adapters.base import DocumentAdapter, ExtractedDocument
 from app.generation.adapters.text_adapter import TextAdapter
+from app.generation.adapters.image_adapter import ImageAdapter
 from app.generation.extractors.knowledge_extractor import KnowledgeExtractor
 from app.generation.generators.procedure_generator import ProcedureGenerator
 from app.generation.models.generation_job import (
@@ -73,6 +74,7 @@ class GenerationService:
         # Default adapters — extend by passing custom dict
         self._adapters: dict[InputSourceType, DocumentAdapter] = {
             InputSourceType.TEXT: TextAdapter(),
+            InputSourceType.IMAGE: ImageAdapter(provider=self._provider),
             **(adapters or {}),
         }
 

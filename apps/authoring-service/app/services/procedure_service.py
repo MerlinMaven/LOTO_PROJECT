@@ -273,13 +273,52 @@ class ProcedureService:
             published_at=now,
         )
 
+    # ── Archive (soft-delete) ─────────────────────────────────────────────────
+
+    async def archive_procedure(
+        self,
+        procedure_id: UUID,
+        *,
+        actor_id: str | None = None,
+        ip_address: str | None = None,
+    ) -> None:
+        """
+        Soft-deletes a procedure by archiving all its non-archived versions.
+        Published versions become archived; drafts/approved versions are discarded.
+        The Procedure envelope is kept for audit trail compliance (OSHA 1910.147).
+        """
+        procedure = await self.repo.get_with_versions(procedure_id)
+        if not procedure:
+            raise NotFoundError("Procedure", procedure_id)
+
+        for version in procedure.versions:
+            if version.status != ProcedureStatus.ARCHIVED:
+                version.status = ProcedureStatus.ARCHIVED
+                await self.repo.update_version(version)
+
+        await self.audit.record_event(
+            AuditEventType.PROCEDURE_ARCHIVED,
+            actor_id=actor_id or "system",
+            machine_id=procedure.machine_id,
+            payload={"procedure_id": str(procedure_id), "reason": "manual_archive"},
+            ip_address=ip_address,
+        )
+
+        logger.info("procedure_archived", procedure_id=str(procedure_id), actor=actor_id)
+
     # ── Read ──────────────────────────────────────────────────────────────────
 
     async def get_procedure(self, procedure_id: UUID) -> ProcedureRead:
         procedure = await self.repo.get_with_versions(procedure_id)
         if not procedure:
             raise NotFoundError("Procedure", procedure_id)
-        return ProcedureRead.model_validate(procedure)
+        result = ProcedureRead.model_validate(procedure)
+        # When no published version exists, expose the latest draft as active_version
+        # so the review UI can render without requiring a publish step first.
+        if result.active_version is None and procedure.versions:
+            latest = sorted(procedure.versions, key=lambda v: v.created_at, reverse=True)[0]
+            result.active_version = ProcedureVersionRead.model_validate(latest)
+        return result
 
     async def get_active_version_for_machine(
         self, machine_id: UUID
@@ -357,9 +396,13 @@ class ProcedureService:
         meta = (latest.workflow_definition or {}).get("_generation_metadata", {})
         confidence = meta.get("overall_confidence")
 
+        # Extract internal_code from the title (format: "[code] - [name]").
+        # Avoids a cross-schema join that breaks under PgBouncer transaction mode.
+        machine_code = procedure.title.split(" - ")[0] if " - " in procedure.title else str(procedure.machine_id)
+
         return ProcedureListItem(
             id=procedure.id,
-            machine_id=procedure.machine_id,
+            machine_id=machine_code,
             title=procedure.title,
             created_by=procedure.created_by,
             current_status=latest.status,

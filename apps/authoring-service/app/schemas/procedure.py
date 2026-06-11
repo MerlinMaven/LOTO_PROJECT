@@ -173,9 +173,11 @@ class ProcedureListItem(AppBaseModel):
     `current_status` is the status of the procedure's most recent version —
     the version that needs the reviewer's attention. `overall_confidence` is
     read from the embedded generation metadata when present (AI drafts).
+    `machine_id` carries the human-readable internal_code (e.g. SIM-CHP-2026),
+    not the DB UUID foreign key.
     """
     id: UUID
-    machine_id: UUID
+    machine_id: str
     title: str
     created_by: str
     current_status: ProcedureStatus

@@ -12,7 +12,7 @@ This allows the HSE dashboard to:
 from __future__ import annotations
 
 from datetime import datetime
-from enum import StrEnum
+from app.compat import StrEnum
 from typing import Generic, Optional, TypeVar
 
 from pydantic import BaseModel, Field

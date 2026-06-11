@@ -39,9 +39,16 @@ class GenerationRunRequest(BaseModel):
         None,
         description="Base64-encoded machine photo. Required when source_type='image'.",
     )
-    provider: Literal["claude", "stub"] = Field(
-        "stub",
-        description="LLM provider to use. 'stub' works without an API key.",
+    provider: Literal["openrouter", "mistral", "groq", "vllm", "stub"] = Field(
+        "openrouter",
+        description=(
+            "LLM provider to use. "
+            "'openrouter' uses OPENROUTER_API_KEY, "
+            "'mistral' uses MISTRAL_API_KEY, "
+            "'groq' uses GROQ_API_KEY, "
+            "'vllm' uses VLLM_BASE_URL (self-hosted), "
+            "'stub' requires no key."
+        ),
     )
 
 
@@ -65,3 +72,4 @@ class GenerationRunResponse(BaseModel):
     generation_notes: list[str]
     llm_provider: str | None
     error_message: str | None = None
+    procedure_id: str | None = None

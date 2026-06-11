@@ -7,21 +7,31 @@ import {
   type InterventionSummary,
 } from "@/api/interventions";
 import { Spinner } from "@/components/ui/Spinner";
+import {
+  Activity,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  ExternalLink,
+} from "lucide-react";
 
 const STATUS_LABELS: Record<InterventionStatus, string> = {
-  pending: "Pending",
-  in_progress: "In Progress",
-  paused: "Paused",
-  completed: "Completed",
-  aborted: "Aborted",
+  pending:     "En attente",
+  in_progress: "En cours",
+  paused:      "En pause",
+  completed:   "Terminé",
+  aborted:     "Annulé",
 };
 
-const STATUS_CLASSES: Record<InterventionStatus, string> = {
-  pending: "bg-steel-100 text-steel-600",
-  in_progress: "bg-blue-100 text-blue-700",
-  paused: "bg-amber-100 text-amber-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  aborted: "bg-red-100 text-red-700",
+const STATUS_STYLES: Record<
+  InterventionStatus,
+  { dot: string; badge: string }
+> = {
+  pending:     { dot: "bg-slate-400",  badge: "border-slate-200 bg-slate-50  text-slate-600" },
+  in_progress: { dot: "bg-blue-500",   badge: "border-blue-200  bg-blue-50   text-blue-700"  },
+  paused:      { dot: "bg-amber-400",  badge: "border-amber-200 bg-amber-50  text-amber-700" },
+  completed:   { dot: "bg-emerald-500",badge: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  aborted:     { dot: "bg-rose-500",   badge: "border-rose-200  bg-rose-50   text-rose-700"  },
 };
 
 const ALL_STATUSES: (InterventionStatus | "all")[] = [
@@ -33,13 +43,10 @@ const ALL_STATUSES: (InterventionStatus | "all")[] = [
 ];
 
 function StatusPill({ status }: { status: InterventionStatus }) {
+  const s = STATUS_STYLES[status];
   return (
-    <span
-      className={clsx(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium",
-        STATUS_CLASSES[status],
-      )}
-    >
+    <span className={clsx("inline-flex items-center gap-1.5 rounded border px-2 py-0.5 text-[11px] font-semibold", s.badge)}>
+      <span className={clsx("h-1.5 w-1.5 rounded-full", s.dot)} />
       {STATUS_LABELS[status]}
     </span>
   );
@@ -48,37 +55,33 @@ function StatusPill({ status }: { status: InterventionStatus }) {
 function MetricCard({
   label,
   value,
-  accent,
+  accentClass = "text-slate-900",
 }: {
   label: string;
   value: number;
-  accent?: string;
+  accentClass?: string;
 }) {
   return (
-    <div className="surface p-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-steel-500">
-        {label}
-      </p>
-      <p className={clsx("mt-1 text-3xl font-bold", accent ?? "text-steel-800")}>
-        {value}
-      </p>
+    <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+      <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">{label}</p>
+      <p className={clsx("mt-1.5 text-2xl font-bold tabular-nums", accentClass)}>{value}</p>
     </div>
   );
 }
 
 function formatDate(iso: string | null): string {
   if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-GB", {
+  return new Date(iso).toLocaleString("fr-FR", {
     dateStyle: "short",
     timeStyle: "short",
   });
 }
 
 function duration(start: string, end: string | null): string {
-  if (!end) return "ongoing";
+  if (!end) return "en cours";
   const ms = new Date(end).getTime() - new Date(start).getTime();
   const mins = Math.floor(ms / 60_000);
-  if (mins < 60) return `${mins}m`;
+  if (mins < 60) return `${mins} min`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
@@ -102,104 +105,94 @@ export function InterventionMonitor() {
   const total = data?.total ?? 0;
   const totalPages = Math.ceil(total / pageSize);
 
-  // Compute metrics from current page results (approximation for MVP)
   const counts = {
     in_progress: interventions.filter((i) => i.status === "in_progress").length,
-    paused: interventions.filter((i) => i.status === "paused").length,
-    completed: interventions.filter((i) => i.status === "completed").length,
-    aborted: interventions.filter((i) => i.status === "aborted").length,
+    paused:      interventions.filter((i) => i.status === "paused").length,
+    completed:   interventions.filter((i) => i.status === "completed").length,
+    aborted:     interventions.filter((i) => i.status === "aborted").length,
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-lg font-semibold text-steel-800">
-          Intervention Monitor
-        </h2>
-        <p className="text-sm text-steel-500">
-          Real-time view of all LOTO interventions tracked by the Authoring
-          Service. Overrides require post-intervention HSE review.
-        </p>
+    <div className="space-y-5">
+
+      {/* ── Page header ───────────────────────────────────────────────── */}
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white shadow-sm">
+          <Activity className="h-[18px] w-[18px] text-slate-600" strokeWidth={2} />
+        </div>
+        <div>
+          <h2 className="text-base font-semibold text-slate-900">
+            Moniteur d'interventions
+          </h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Vue en temps réel de toutes les interventions LOTO suivies par l'Authoring Service.
+            Les dérogations nécessitent une revue HSE post-intervention.
+          </p>
+        </div>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {/* ── Metric cards ─────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <MetricCard label="Total" value={total} />
-        <MetricCard
-          label="In Progress"
-          value={counts.in_progress}
-          accent="text-blue-700"
-        />
-        <MetricCard
-          label="Completed"
-          value={counts.completed}
-          accent="text-emerald-700"
-        />
-        <MetricCard
-          label="Aborted"
-          value={counts.aborted}
-          accent="text-hazard"
-        />
+        <MetricCard label="En cours" value={counts.in_progress} accentClass="text-blue-700" />
+        <MetricCard label="Terminés" value={counts.completed} accentClass="text-emerald-700" />
+        <MetricCard label="Annulés" value={counts.aborted} accentClass="text-rose-700" />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium text-steel-500">Status:</span>
+      {/* ── Status filter ─────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center gap-0 border-b border-slate-200">
         {ALL_STATUSES.map((s) => (
           <button
             key={s}
-            onClick={() => {
-              setStatusFilter(s);
-              setPage(1);
-            }}
+            onClick={() => { setStatusFilter(s); setPage(1); }}
             className={clsx(
-              "rounded-full border px-3 py-1 text-xs font-medium transition",
+              "-mb-px border-b-2 px-4 py-2.5 text-xs font-semibold uppercase tracking-wide transition-all duration-150",
               statusFilter === s
-                ? "border-steel-700 bg-steel-700 text-white"
-                : "border-steel-200 text-steel-600 hover:border-steel-400",
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-slate-400 hover:border-slate-300 hover:text-slate-600",
             )}
           >
-            {s === "all" ? "All" : STATUS_LABELS[s]}
+            {s === "all" ? "Toutes" : STATUS_LABELS[s as InterventionStatus]}
           </button>
         ))}
       </div>
 
-      {/* Table */}
-      <div className="surface overflow-x-auto">
+      {/* ── Table ────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
         {isLoading && (
           <div className="flex items-center justify-center py-16">
-            <Spinner label="Loading interventions…" />
+            <Spinner label="Chargement des interventions…" />
           </div>
         )}
 
         {isError && (
-          <div className="px-6 py-8 text-center text-sm text-hazard">
-            {(error as Error)?.message ?? "Failed to load interventions."}
+          <div className="flex items-start gap-3 px-6 py-8">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            <p className="text-sm text-rose-700">
+              {(error as Error)?.message ?? "Impossible de charger les interventions."}
+            </p>
           </div>
         )}
 
         {!isLoading && !isError && (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-steel-200 text-left text-xs font-semibold uppercase tracking-wide text-steel-500">
-                <th className="px-4 py-3">Intervention ID</th>
-                <th className="px-4 py-3">Machine</th>
-                <th className="px-4 py-3">Operator</th>
-                <th className="px-4 py-3">Status</th>
-                <th className="px-4 py-3">Started</th>
-                <th className="px-4 py-3">Duration</th>
-                <th className="px-4 py-3">Report</th>
+              <tr className="border-b border-slate-200 bg-slate-50">
+                {["ID Intervention", "Machine", "Opérateur", "Statut", "Démarrée", "Durée", "Rapport"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-500"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100">
               {interventions.length === 0 ? (
                 <tr>
-                  <td
-                    colSpan={7}
-                    className="px-4 py-12 text-center text-steel-400"
-                  >
-                    No interventions found.
+                  <td colSpan={7} className="px-4 py-12 text-center text-sm text-slate-400">
+                    Aucune intervention trouvée.
                   </td>
                 </tr>
               ) : (
@@ -212,27 +205,28 @@ export function InterventionMonitor() {
         )}
       </div>
 
-      {/* Pagination */}
+      {/* ── Pagination ───────────────────────────────────────────────── */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between text-xs text-steel-500">
-          <span>
-            {(page - 1) * pageSize + 1}–
-            {Math.min(page * pageSize, total)} of {total}
+        <div className="flex items-center justify-between text-[11px] text-slate-500">
+          <span className="tabular-nums">
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} sur {total}
           </span>
-          <div className="flex gap-2">
+          <div className="flex items-center gap-1.5">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
-              className="rounded border border-steel-200 px-3 py-1 hover:border-steel-400 disabled:opacity-40"
+              className="flex items-center gap-1 rounded border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              ← Prev
+              <ChevronLeft className="h-3 w-3" />
+              Préc.
             </button>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage((p) => p + 1)}
-              className="rounded border border-steel-200 px-3 py-1 hover:border-steel-400 disabled:opacity-40"
+              className="flex items-center gap-1 rounded border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-600 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Next →
+              Suiv.
+              <ChevronRight className="h-3 w-3" />
             </button>
           </div>
         </div>
@@ -246,22 +240,28 @@ function InterventionRow({ row }: { row: InterventionSummary }) {
   const end = row.completed_at ?? row.aborted_at;
 
   return (
-    <tr className="border-b border-steel-100 transition hover:bg-steel-50">
-      <td className="px-4 py-3 font-mono text-xs text-steel-500">{shortId}…</td>
-      <td className="px-4 py-3 font-medium text-steel-800">
+    <tr className="group transition-colors duration-100 hover:bg-slate-50">
+      <td className="px-4 py-3">
+        <code className="font-mono text-[11px] text-slate-400 group-hover:text-slate-600">
+          {shortId}…
+        </code>
+      </td>
+      <td className="px-4 py-3">
         <span
-          className="block max-w-[140px] truncate"
+          className="block max-w-[140px] truncate font-mono text-xs font-semibold text-slate-700"
           title={row.machine_id}
         >
           {row.machine_id}
         </span>
       </td>
-      <td className="px-4 py-3 text-steel-600">{row.operator_name}</td>
+      <td className="px-4 py-3 text-xs text-slate-600">{row.operator_name}</td>
       <td className="px-4 py-3">
         <StatusPill status={row.status} />
       </td>
-      <td className="px-4 py-3 text-steel-500">{formatDate(row.started_at)}</td>
-      <td className="px-4 py-3 text-steel-500">
+      <td className="px-4 py-3 text-[11px] tabular-nums text-slate-500">
+        {formatDate(row.started_at)}
+      </td>
+      <td className="px-4 py-3 text-[11px] tabular-nums text-slate-500">
         {duration(row.started_at, end)}
       </td>
       <td className="px-4 py-3">
@@ -270,12 +270,13 @@ function InterventionRow({ row }: { row: InterventionSummary }) {
             href={row.pdf_report_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs text-steel-600 underline hover:text-steel-800"
+            className="flex items-center gap-1 text-xs font-medium text-blue-600 transition-colors hover:text-blue-800"
           >
             PDF
+            <ExternalLink className="h-3 w-3" />
           </a>
         ) : (
-          <span className="text-xs text-steel-300">—</span>
+          <span className="text-xs text-slate-300">—</span>
         )}
       </td>
     </tr>

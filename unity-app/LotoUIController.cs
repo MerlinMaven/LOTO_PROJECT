@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
-public class LotoUIController : MonoBehaviour
+public partial class LotoUIController : MonoBehaviour
 {
     [Header("Manager References")]
     [SerializeField] private LotoManager lotoManager;
@@ -467,6 +467,7 @@ public class LotoUIController : MonoBehaviour
 
     private void OnDestroy()
     {
+        DisposeRedesignedView();
         if (webcamTexture != null)
         {
             webcamTexture.Stop();

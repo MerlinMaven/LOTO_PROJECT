@@ -64,6 +64,17 @@ ngrok*
 *.msi
 
 # ── Runtime-generated files ───────────────────────────────────────────────────
+*.db
+*.sqlite
+*.sqlite3
+apps/field-service/storage/evidence/*
+!apps/field-service/storage/evidence/.gitkeep
+apps/field-service/storage/reports/*
+!apps/field-service/storage/reports/.gitkeep
+apps/field-service/storage/signatures/*
+!apps/field-service/storage/signatures/.gitkeep
+apps/hse-dashboard/vite.config.js
+apps/hse-dashboard/vite.config.d.ts
 scratch_report_*.pdf
 sig_temp_*.png
 diagnostics_report.txt

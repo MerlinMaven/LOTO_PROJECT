@@ -75,46 +75,38 @@ Field operator device
 
 ### Prerequisites
 
-- Python 3.12
+- Python 3.10+
 - Node.js 20+
-- A Supabase project with credentials
 
-### Authoring Service
+*Note: Par défaut, le projet tourne en **mode 100% autonome local** (base de données SQLite `smartloto.db` partagée et stockage local des preuves). Aucune dépendance externe ni compte Supabase n'est requis pour tester immédiatement.*
+
+### 1. Authoring Service (Génération LLM & Validation HSE)
 
 ```bash
 cd apps/authoring-service
-cp .env.example .env          # fill in DATABASE_URL, SUPABASE_*, LLM API keys
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8002
+uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 ```
 
-Key environment variables:
-
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | asyncpg connection string (PgBouncer port 6543 for Supabase) |
-| `OPENROUTER_API_KEY` | Default LLM provider |
-| `GROQ_API_KEY` | Alternative: Groq (LLaMA 3) |
-| `MISTRAL_API_KEY` | Alternative: Mistral |
-| `VLLM_BASE_URL` | Alternative: self-hosted vLLM endpoint |
-
-### Field Service
+### 2. Field Service (Exécution Unity & Vision)
 
 ```bash
 cd apps/field-service
-cp .env.example .env
 pip install -r requirements.txt
-uvicorn app.main:app --host 0.0.0.0 --port 8001
+uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-### HSE Dashboard
+### 3. HSE Dashboard (Console Web React)
 
 ```bash
 cd apps/hse-dashboard
-cp .env.example .env          # set VITE_PROXY_TARGET if backend is not on localhost:8002
 npm install
-npm run dev                   # serves on http://localhost:5173
+npm run dev                   # Accessible sur http://localhost:5173
 ```
+
+### 4. Unity App (Client AR Meta Quest)
+
+Ouvrir la scène Unity dans l'éditeur. Le composant `SmartLOTOClient.cs` pointe directement sur `http://127.0.0.1:8000` (`field-service`).
 
 ---
 

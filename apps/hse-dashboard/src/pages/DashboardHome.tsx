@@ -10,7 +10,6 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { ConfidenceBar } from "@/components/ui/ConfidenceBar";
 import { ConfirmModal } from "@/components/ui/ConfirmModal";
 import { QRCodeModal } from "@/components/ui/QRCodeModal";
-import { Button } from "@/components/ui/Button";
 import { formatRelative } from "@/lib/format";
 import type { ApiError } from "@/types/api";
 import { Search, QrCode, Archive, ClipboardList, AlertCircle } from "lucide-react";

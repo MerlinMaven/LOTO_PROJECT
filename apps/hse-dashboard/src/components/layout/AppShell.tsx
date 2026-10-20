@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { clsx } from "clsx";
 import { useAuthStore } from "@/store/authStore";
-import { ClipboardList, Zap, Activity, ShieldCheck } from "lucide-react";
+import { ClipboardList, Zap, Activity, ShieldCheck, LucideIcon } from "lucide-react";
 
 const NAV_ITEMS = [
   { to: "/procedures", label: "Procédures", Icon: ClipboardList },
@@ -91,7 +91,7 @@ function SidebarLink({
 }: {
   to: string;
   label: string;
-  Icon: React.FC<{ className?: string; strokeWidth?: number }>;
+  Icon: LucideIcon;
 }) {
   return (
     <NavLink

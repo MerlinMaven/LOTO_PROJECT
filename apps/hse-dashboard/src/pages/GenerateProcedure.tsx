@@ -3,8 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { clsx } from "clsx";
 import { runGeneration } from "@/api/generation";
-import { Button } from "@/components/ui/Button";
-import { Spinner } from "@/components/ui/Spinner";
+import { LoadingPane } from "@/components/ui/Spinner";
 import type { ApiError } from "@/types/api";
 import {
   Zap,
@@ -309,7 +308,7 @@ export function GenerateProcedure() {
 
           {isRunning && (
             <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-slate-200 bg-white p-10 shadow-sm">
-              <Spinner label="Exécution du pipeline de génération…" />
+              <LoadingPane label="Exécution du pipeline de génération…" />
             </div>
           )}
 

@@ -32,6 +32,7 @@ import {
   GitCompare,
   BarChart2,
   ClipboardCheck,
+  LucideIcon,
 } from "lucide-react";
 
 type TabKey =
@@ -42,7 +43,7 @@ type TabKey =
   | "metrics"
   | "audit";
 
-const TABS: { key: TabKey; label: string; Icon: React.FC<{ className?: string; strokeWidth?: number }> }[] = [
+const TABS: { key: TabKey; label: string; Icon: LucideIcon }[] = [
   { key: "components", label: "Composants",  Icon: Cpu },
   { key: "workflow",   label: "Workflow",    Icon: GitBranch },
   { key: "vision",     label: "Vision",      Icon: Eye },

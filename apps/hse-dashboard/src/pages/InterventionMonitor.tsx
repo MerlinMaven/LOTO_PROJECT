@@ -6,7 +6,7 @@ import {
   type InterventionStatus,
   type InterventionSummary,
 } from "@/api/interventions";
-import { Spinner } from "@/components/ui/Spinner";
+import { LoadingPane } from "@/components/ui/Spinner";
 import {
   Activity,
   AlertCircle,
@@ -161,7 +161,7 @@ export function InterventionMonitor() {
       <div className="overflow-hidden rounded-md border border-slate-200 bg-white shadow-sm">
         {isLoading && (
           <div className="flex items-center justify-center py-16">
-            <Spinner label="Chargement des interventions…" />
+            <LoadingPane label="Chargement des interventions…" />
           </div>
         )}
 

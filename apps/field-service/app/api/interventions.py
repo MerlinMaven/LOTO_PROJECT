@@ -1,7 +1,7 @@
 """
-Interventions API — LOTO runtime lifecycle endpoints.
+SmartLOTO Field Service — API Interventions LOTO (consommé par SmartLOTOClient.cs).
 
-Frozen contract (do NOT change without recompiling the Quest app):
+Contrat figé Unity (ne pas modifier sans recompiler l'application Quest) :
   POST /interventions/start
   POST /interventions/validate-step
   POST /interventions/override-step
@@ -15,19 +15,28 @@ from datetime import datetime
 from fastapi import HTTPException
 from fastapi.routing import APIRouter
 
-import runtime.database as database
-from runtime.config import STORAGE_PATH_EVIDENCE, STORAGE_PATH_REPORTS, STORAGE_PATH_SIGNATURES
-from runtime.models import ActionOverride, ActionValidation, CloseIntervention, StartIntervention
-from runtime.services import pdf as pdf_service
-from runtime.services import storage as storage_service
-from runtime.services import vision as vision_service
+from app.config import (
+    STORAGE_PATH_EVIDENCE,
+    STORAGE_PATH_REPORTS,
+    STORAGE_PATH_SIGNATURES,
+)
+import app.database as database
+from app.models import (
+    ActionOverride,
+    ActionValidation,
+    CloseIntervention,
+    StartIntervention,
+)
+from app.services import pdf as pdf_service
+from app.services import storage as storage_service
+from app.services import vision as vision_service
 
 router = APIRouter()
 
 
 @router.post("/interventions/start")
 async def start_intervention(data: StartIntervention):
-    """Start a new LOTO intervention for the given machine."""
+    """Démarre une nouvelle intervention LOTO pour la machine spécifiée."""
     if database.db is None:
         raise HTTPException(status_code=500, detail="Base de données indisponible.")
 
@@ -57,7 +66,7 @@ async def start_intervention(data: StartIntervention):
 
 @router.post("/interventions/validate-step")
 async def validate_step(data: ActionValidation):
-    """Validate a LOTO step via YOLO-World zero-shot visual detection."""
+    """Valide une étape visuellement avec YOLO-World à partir de la capture AR."""
     if database.db is None:
         raise HTTPException(status_code=500, detail="Base de données indisponible.")
 
@@ -104,7 +113,7 @@ async def validate_step(data: ActionValidation):
 
 @router.post("/interventions/override-step")
 async def override_step(data: ActionOverride):
-    """Manually validate a step with photographic evidence (degraded-mode override)."""
+    """Valide manuellement une étape en cas de mode dégradé avec photo de preuve."""
     if database.db is None:
         raise HTTPException(status_code=500, detail="Base de données indisponible.")
 
@@ -148,7 +157,7 @@ async def override_step(data: ActionOverride):
 
 @router.post("/interventions/close")
 async def close_intervention(data: CloseIntervention):
-    """Close an intervention, upload the digital signature, and generate the PDF audit report."""
+    """Clôture l'intervention, enregistre la signature opérateur et compile le rapport d'audit PDF."""
     if database.db is None:
         raise HTTPException(status_code=500, detail="Base de données indisponible.")
 
@@ -162,7 +171,7 @@ async def close_intervention(data: CloseIntervention):
     p_res = database.db.table("procedures").select("*").eq("machine_id", machine_id).execute()
     machine_name = p_res.data[0].get("machine_name") if p_res.data else "Machine Inconnue"
 
-    # Upload operator signature
+    # Enregistrement de la signature
     sig_bytes: bytes | None = None
     sig_url = ""
     try:
@@ -170,14 +179,14 @@ async def close_intervention(data: CloseIntervention):
         sig_filename = f"{STORAGE_PATH_SIGNATURES}/{data.intervention_id}_signature.png"
         sig_url = storage_service.upload_file(sig_bytes, sig_filename, content_type="image/png")
     except Exception as exc:
-        print(f"Erreur de décodage de la signature : {exc}")
+        print(f"[WARN] Erreur de décodage signature : {exc}")
 
-    # Generate and upload PDF audit report
+    # Génération et sauvegarde du PDF
     pdf_bytes = pdf_service.generate_audit_report(intervention, machine_name, sig_bytes)
     pdf_filename = f"{STORAGE_PATH_REPORTS}/Audit_Report_{data.intervention_id}.pdf"
     pdf_url = storage_service.upload_file(pdf_bytes, pdf_filename, content_type="application/pdf")
 
-    # Mark intervention as COMPLETED
+    # Clôture du statut
     database.db.table("interventions").update({
         "status": "COMPLETED",
         "signature_url": sig_url,

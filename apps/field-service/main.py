@@ -1,18 +1,11 @@
 """
-SmartLOTO Field Service — entry point.
+SmartLOTO Field Service — Point d'entrée principal.
 
-Start with:
+Lancement local :
     cd apps/field-service
-    uvicorn main:app --host 0.0.0.0 --port 8000
-
-The root-level backend.py is a compatibility shim that delegates here so that
-the original `uvicorn backend:app` command continues to work without change.
+    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 """
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
-from runtime.main import app  # noqa: E402
+from app.main import app
 
 __all__ = ["app"]

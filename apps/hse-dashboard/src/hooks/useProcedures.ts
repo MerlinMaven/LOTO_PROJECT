@@ -50,8 +50,8 @@ export function useUpdateDraft(procedureId: string) {
 export function useApproveProcedure(procedureId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: ApprovalCreatePayload) =>
-      proceduresApi.approve(procedureId, payload),
+    mutationFn: ({ versionId, payload }: { versionId: string; payload: ApprovalCreatePayload }) =>
+      proceduresApi.approve(procedureId, versionId, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: procedureKeys.detail(procedureId) });
       qc.invalidateQueries({ queryKey: procedureKeys.all });
@@ -62,7 +62,7 @@ export function useApproveProcedure(procedureId: string) {
 export function usePublishProcedure(procedureId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => proceduresApi.publish(procedureId),
+    mutationFn: (versionId: string) => proceduresApi.publish(procedureId, versionId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: procedureKeys.detail(procedureId) });
       qc.invalidateQueries({ queryKey: procedureKeys.all });
@@ -75,6 +75,22 @@ export function useArchiveProcedure() {
   return useMutation({
     mutationFn: (procedureId: string) => proceduresApi.archive(procedureId),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: procedureKeys.all });
+    },
+  });
+}
+
+export function useResolveClarification(procedureId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: {
+      clarification_id: string;
+      answer: string;
+      rationale?: string;
+      step_id?: string;
+    }) => proceduresApi.resolveClarification(procedureId, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: procedureKeys.detail(procedureId) });
       qc.invalidateQueries({ queryKey: procedureKeys.all });
     },
   });

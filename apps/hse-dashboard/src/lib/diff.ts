@@ -55,6 +55,54 @@ export function diffWorkflows(
 ): FieldChange[] {
   const changes: FieldChange[] = [];
 
+  // ── Clarifications HSE & Arbitrages ───────────────────────────────────────
+  const origClarifs = new Map(
+    ((original.clarifications_required ?? []) as Array<Record<string, unknown>>).map((q) => [
+      String(q.id),
+      q,
+    ])
+  );
+  const draftClarifs = (draft.clarifications_required ?? []) as Array<Record<string, unknown>>;
+
+  for (const q of draftClarifs) {
+    const qId = String(q.id);
+    const prev = origClarifs.get(qId);
+    const relatedComps = Array.isArray(q.related_component_ids)
+      ? (q.related_component_ids as string[]).filter(Boolean)
+      : [];
+    const compLabel = relatedComps.length > 0 ? ` [${relatedComps.join(" / ")}]` : "";
+    const questionText = String(q.question || qId);
+    const scope = `Clarification HSE${compLabel} · ${questionText.length > 60 ? questionText.slice(0, 60) + "…" : questionText}`;
+
+    const res = (q.resolution && typeof q.resolution === "object" ? q.resolution : {}) as Record<string, unknown>;
+    const prevRes = (prev?.resolution && typeof prev.resolution === "object" ? prev.resolution : {}) as Record<string, unknown>;
+
+    if (q.status === "resolved") {
+      const currentVal = `${res.answer || "Décision validée"}${res.rationale ? ` — Justification : ${res.rationale}` : ""}`;
+      const prevVal = prev && prev.status === "resolved" && prevRes.answer
+        ? `${prevRes.answer}${prevRes.rationale ? ` — Justification : ${prevRes.rationale}` : ""}`
+        : "";
+
+      if (!prev || prev.status !== "resolved") {
+        changes.push({
+          scope,
+          field: "Décision technique HSE",
+          kind: "added",
+          before: "À clarifier (En attente d'arbitrage)",
+          after: currentVal,
+        });
+      } else if (currentVal !== prevVal) {
+        changes.push({
+          scope,
+          field: "Décision technique HSE modifiée",
+          kind: "modified",
+          before: prevVal,
+          after: currentVal,
+        });
+      }
+    }
+  }
+
   // ── Components (vision metadata) ───────────────────────────────────────────
   const origComponents = new Map(
     listComponents(original).map((c) => [c.component_id, c]),
@@ -74,6 +122,13 @@ export function diffWorkflows(
     }
     compareField(scope, "label", prev.label, comp.label, changes);
     compareField(scope, "type", prev.component_type, comp.component_type, changes);
+    compareField(
+      scope,
+      "statut clarification",
+      Boolean((prev as unknown as Record<string, unknown>).clarification_needed) ? "À clarifier" : "Conforme",
+      Boolean((comp as unknown as Record<string, unknown>).clarification_needed) ? "À clarifier" : "Conforme",
+      changes,
+    );
     compareField(
       scope,
       "detection prompts",
@@ -122,6 +177,13 @@ export function diffWorkflows(
     }
     compareField(scope, "sequence", prev.step.sequence, step.sequence, changes);
     compareField(scope, "instruction", prev.step.instruction, step.instruction, changes);
+    compareField(
+      scope,
+      "critères de vérification",
+      prev.step.verification?.criteria ?? prev.step.validation?.criteria,
+      step.verification?.criteria ?? step.validation?.criteria,
+      changes,
+    );
     compareField(scope, "safety note", prev.step.safety_note, step.safety_note, changes);
     compareField(
       scope,
@@ -134,8 +196,8 @@ export function diffWorkflows(
     compareField(
       scope,
       "validation method",
-      prev.step.validation?.method,
-      step.validation?.method,
+      prev.step.verification?.method ?? prev.step.validation?.method,
+      step.verification?.method ?? step.validation?.method,
       changes,
     );
     compareField(

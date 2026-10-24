@@ -34,7 +34,6 @@ export interface PendingField {
   reason: string;
 }
 
-const VISION_METHODS = new Set(["vision_detection", "inverse_vision_absence"]);
 
 export function computeMetrics(
   wf: WorkflowDefinition,
@@ -53,11 +52,12 @@ export function computeMetrics(
     if (!step.instruction || !step.instruction.trim()) {
       pendingFields.push({ stepId: step.step_id, reason: "empty instruction" });
     }
-    if (!step.validation?.method) {
-      pendingFields.push({ stepId: step.step_id, reason: "no validation method" });
+    const verification = step.verification ?? step.validation;
+    if (!verification?.method) {
+      pendingFields.push({ stepId: step.step_id, reason: "missing verification method" });
     } else if (
-      VISION_METHODS.has(String(step.validation.method)) &&
-      (step.validation.yolo_candidate_prompts?.length ?? 0) === 0
+      (verification.method === "vision_detection" || verification.method === "vision") &&
+      (!(verification.yolo_candidate_prompts as unknown[] | undefined) || (verification.yolo_candidate_prompts as unknown[]).length === 0)
     ) {
       pendingFields.push({
         stepId: step.step_id,
@@ -88,7 +88,7 @@ export function computeMetrics(
   if (steps.length === 0) blockers.push("procedure has no steps");
 
   return {
-    generationConfidence: meta.overall_confidence ?? null,
+    generationConfidence: typeof meta.overall_confidence === "number" ? meta.overall_confidence : null,
     lowConfidenceComponents,
     componentCount: components.length,
     stepCount: countSteps(wf),

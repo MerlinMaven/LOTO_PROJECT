@@ -1,468 +1,489 @@
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { clsx } from "clsx";
-import { runGeneration } from "@/api/generation";
-import { LoadingPane } from "@/components/ui/Spinner";
-import type { ApiError } from "@/types/api";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  Zap,
-  Cpu,
-  FileText,
-  Image,
   AlertCircle,
-  AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  History,
   Info,
-  ArrowRight,
+  LoaderCircle,
+  RotateCcw,
   UploadCloud,
-  ChevronRight,
+  WifiOff,
+  ArrowRight,
+  ShieldCheck,
 } from "lucide-react";
+import {
+  getDocumentJob,
+  listDocumentJobs,
+  retryDocumentJob,
+  submitPdfDocument,
+  type DocumentJob,
+} from "@/api/generation";
 
-type Provider = "openrouter" | "mistral" | "groq" | "vllm" | "stub";
-type SourceType = "text" | "image";
+const MAX_PDF_BYTES = 20 * 1024 * 1024;
+const ACTIVE_JOB_KEY = "smartloto_active_job_id";
 
-const PROVIDER_OPTIONS: { value: Provider; label: string; description: string }[] = [
-  {
-    value: "openrouter",
-    label: "OpenRouter (Recommandé)",
-    description: "Clé OPENROUTER_API_KEY. Modèle par défaut : Qwen 2.5 7B. Vision via Qwen-VL.",
-  },
-  {
-    value: "mistral",
-    label: "Mistral AI",
-    description: "Clé MISTRAL_API_KEY. Rapide et économique pour l'extraction JSON structurée.",
-  },
-  {
-    value: "groq",
-    label: "Groq (LLaMA 3 70B)",
-    description: "Clé GROQ_API_KEY. Inférence ultra-rapide avec LLaMA 3 70B.",
-  },
-  {
-    value: "vllm",
-    label: "vLLM (Auto-hébergé)",
-    description: "Utilise VLLM_BASE_URL. Votre propre serveur GPU. Supporte texte et vision.",
-  },
-  {
-    value: "stub",
-    label: "Stub (Mock — sans clé API)",
-    description: "Retourne des données mock instantanées. Pour tests UI uniquement.",
-  },
+const PROCESS_STEPS = [
+  { id: "queued", label: "Document reçu par le serveur" },
+  { id: "reading", label: "Extraction du texte et des schémas" },
+  { id: "analyzing", label: "Analyse technique et structuration LOTO" },
+  { id: "saving", label: "Validation et création du brouillon" },
+  { id: "succeeded", label: "Brouillon prêt pour revue HSE" },
 ];
 
 export function GenerateProcedure() {
   const navigate = useNavigate();
-
-  const [machineId, setMachineId] = useState("");
-  const [machineName, setMachineName] = useState("");
-  const [requestedBy, setRequestedBy] = useState("");
-  const [components, setComponents] = useState("");
-  const [provider, setProvider] = useState<Provider>("openrouter");
-  const [sourceType, setSourceType] = useState<SourceType>("text");
-  const [imageBase64, setImageBase64] = useState<string | undefined>();
-  const [imagePreview, setImagePreview] = useState<string | undefined>();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const queryClient = useQueryClient();
-  const mutation = useMutation({
-    mutationFn: runGeneration,
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["procedures"] });
-      if (data.procedure_id) {
-        navigate(`/procedures/${data.procedure_id}`);
-      } else {
-        navigate("/procedures");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const [file, setFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [networkWarning, setNetworkWarning] = useState<string | null>(null);
+  const [job, setJob] = useState<DocumentJob | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  const [jobsHistory, setJobsHistory] = useState<DocumentJob[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  const redirectedRef = useRef(false);
+
+  // Recharge l'historique des tâches depuis le backend
+  const refreshHistory = useCallback(async () => {
+    try {
+      const history = await listDocumentJobs(15);
+      setJobsHistory(history);
+      return history;
+    } catch {
+      return [];
+    }
+  }, []);
+
+  // Restauration de l'état au montage
+  useEffect(() => {
+    let isMounted = true;
+    async function restoreActiveTask() {
+      if (redirectedRef.current) return;
+      const history = await refreshHistory();
+      if (!isMounted || redirectedRef.current) return;
+
+      const rememberedJobId = localStorage.getItem(ACTIVE_JOB_KEY);
+      const activeJob = history.find((item) => item.status === "queued" || item.status === "running");
+      const targetId = activeJob?.job_id || rememberedJobId;
+
+      if (targetId) {
+        try {
+          const loaded = await getDocumentJob(targetId);
+          if (!isMounted || redirectedRef.current) return;
+          setJob(loaded);
+          if (loaded.status === "queued" || loaded.status === "running") {
+            setIsRunning(true);
+            setElapsedSeconds(loaded.elapsed_seconds ?? 0);
+          } else if (loaded.status === "succeeded") {
+            localStorage.removeItem(ACTIVE_JOB_KEY);
+            setIsRunning(false);
+            redirectedRef.current = true;
+            const targetProc = loaded.procedure_id || (loaded.result as Record<string, unknown> | undefined)?.procedure_id;
+            if (targetProc) {
+              navigate(`/procedures/${encodeURIComponent(String(targetProc))}`, { replace: true });
+            }
+          } else if (loaded.status === "failed") {
+            setFileError(loaded.error || "Le traitement a échoué.");
+            setIsRunning(false);
+          }
+        } catch {
+          localStorage.removeItem(ACTIVE_JOB_KEY);
+        }
       }
-    },
-  });
+    }
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const result = ev.target?.result as string;
-      setImagePreview(result);
-      const b64 = result.includes(",") ? result.split(",")[1] : result;
-      setImageBase64(b64);
+    void restoreActiveTask();
+    return () => {
+      isMounted = false;
     };
-    reader.readAsDataURL(file);
+  }, [refreshHistory, navigate]);
+
+  // Chronomètre de durée écoulée pendant l'analyse active
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  // Boucle de polling robuste : redirige instantanément vers la revue dès la réussite
+  useEffect(() => {
+    if (!job || !isRunning || redirectedRef.current) return;
+    if (job.status !== "queued" && job.status !== "running") return;
+
+    let isPolling = true;
+    const intervalId = setInterval(async () => {
+      if (!isPolling || redirectedRef.current) return;
+      try {
+        const updated = await getDocumentJob(job.job_id);
+        if (!isPolling || redirectedRef.current) return;
+        setNetworkWarning(null);
+        setJob(updated);
+
+        if (updated.status === "succeeded") {
+          isPolling = false;
+          clearInterval(intervalId);
+          redirectedRef.current = true;
+          setIsRunning(false);
+          localStorage.removeItem(ACTIVE_JOB_KEY);
+          void refreshHistory();
+          void queryClient.invalidateQueries({ queryKey: ["procedures"] });
+
+          // Redirection immédiate vers l'espace de revue HSE du brouillon
+          const targetProc = updated.procedure_id || (updated.result as Record<string, unknown> | undefined)?.procedure_id;
+          if (targetProc) {
+            navigate(`/procedures/${encodeURIComponent(String(targetProc))}`, { replace: true });
+          }
+        } else if (updated.status === "failed") {
+          isPolling = false;
+          clearInterval(intervalId);
+          setIsRunning(false);
+          setFileError(updated.error || "Le traitement du document a échoué.");
+          void refreshHistory();
+        }
+      } catch {
+        if (!isPolling || redirectedRef.current) return;
+        setNetworkWarning("Connexion au serveur momentanément interrompue, nouvelle tentative…");
+      }
+    }, 1500);
+
+    return () => {
+      isPolling = false;
+      clearInterval(intervalId);
+    };
+  }, [job?.job_id, isRunning, job?.status, refreshHistory, queryClient, navigate]);
+
+  const chooseFile = async (candidate?: File) => {
+    if (!candidate) return;
+    setIsRunning(false);
+    setJob(null);
+    setFileError(null);
+    setNetworkWarning(null);
+    setElapsedSeconds(0);
+    localStorage.removeItem(ACTIVE_JOB_KEY);
+
+    if (!candidate.name.toLowerCase().endsWith(".pdf") || (candidate.type && candidate.type !== "application/pdf")) {
+      setFile(null);
+      setFileError("Veuillez sélectionner un fichier au format PDF.");
+      return;
+    }
+    if (candidate.size === 0) {
+      setFile(null);
+      setFileError("Le fichier PDF est vide.");
+      return;
+    }
+    if (candidate.size > MAX_PDF_BYTES) {
+      setFile(null);
+      setFileError("Fichier trop volumineux. La taille maximale est de 20 Mo.");
+      return;
+    }
+
+    setFile(candidate);
   };
 
-  const handleGenerate = () => {
-    if (!requestedBy.trim()) return;
-    if (sourceType === "image" && !imageBase64) return;
-    mutation.mutate({
-      machine_id: machineId.trim(),
-      machine_name: machineName.trim(),
-      components: components.trim(),
-      requested_by: requestedBy.trim(),
-      source_type: sourceType,
-      image_base64: imageBase64,
-      provider,
-    });
+  const runUploadAndAnalyze = async () => {
+    if (!file || isRunning || isUploading) return;
+    setIsUploading(true);
+    setFileError(null);
+    setNetworkWarning(null);
+    setElapsedSeconds(0);
+
+    try {
+      const response = await submitPdfDocument(file);
+      setIsUploading(false);
+      setJob(response);
+      localStorage.setItem(ACTIVE_JOB_KEY, response.job_id);
+
+      if (response.status === "succeeded") {
+        redirectedRef.current = true;
+        localStorage.removeItem(ACTIVE_JOB_KEY);
+        void queryClient.invalidateQueries({ queryKey: ["procedures"] });
+        const targetProc = response.procedure_id || (response.result as Record<string, unknown> | undefined)?.procedure_id;
+        if (targetProc) {
+          navigate(`/procedures/${encodeURIComponent(String(targetProc))}`, { replace: true });
+        }
+      } else {
+        setIsRunning(true);
+      }
+    } catch (err: unknown) {
+      setIsUploading(false);
+      setIsRunning(false);
+      const msg = err instanceof Error ? err.message : "Échec de l'envoi du document.";
+      setFileError(msg);
+    }
   };
 
-  const result = mutation.data;
-  const isRunning = mutation.isPending;
-  const canSubmit = !!machineId.trim() && !!requestedBy.trim() && !(sourceType === "image" && !imageBase64);
+  const handleRetry = async () => {
+    if (!job || isRunning) return;
+    setFileError(null);
+    setNetworkWarning(null);
+    setElapsedSeconds(0);
+    setIsRunning(true);
+
+    try {
+      const response = await retryDocumentJob(job.job_id);
+      setJob(response);
+      localStorage.setItem(ACTIVE_JOB_KEY, response.job_id);
+    } catch (err: unknown) {
+      setIsRunning(false);
+      const msg = err instanceof Error ? err.message : "Impossible de relancer l'analyse.";
+      setFileError(msg);
+    }
+  };
+
+  const currentStageIndex = job
+    ? PROCESS_STEPS.findIndex((s) => s.id === job.stage)
+    : -1;
 
   return (
-    <div className="space-y-5">
-
-      {/* ── Page header ───────────────────────────────────────────────── */}
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white shadow-sm">
-          <Zap className="h-[18px] w-[18px] text-slate-600" strokeWidth={2} />
-        </div>
-        <div>
-          <h2 className="text-base font-semibold text-slate-900">
-            Générer une procédure LOTO
-          </h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Génération assistée par IA à partir des métadonnées machine. Le brouillon apparaîtra dans la liste des procédures pour validation HSE.
-          </p>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
-        {/* ── Left: form ──────────────────────────────────────────────── */}
-        <div className="space-y-5">
-
-          {/* Machine parameters */}
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-slate-500" strokeWidth={2} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Paramètres machine
-              </span>
-            </div>
-
-            <div className="space-y-3.5">
-              <FormField label="Machine ID" required>
-                <input
-                  className={inputCls}
-                  value={machineId}
-                  onChange={(e) => setMachineId(e.target.value)}
-                  placeholder="ex. COMPRESSEUR_A1"
-                />
-              </FormField>
-
-              <FormField label="Nom de la machine">
-                <input
-                  className={inputCls}
-                  value={machineName}
-                  onChange={(e) => setMachineName(e.target.value)}
-                  placeholder="ex. Compresseur HP Ligne A"
-                />
-              </FormField>
-
-              <FormField label="Ingénieur HSE" required>
-                <input
-                  className={inputCls}
-                  value={requestedBy}
-                  onChange={(e) => setRequestedBy(e.target.value)}
-                  placeholder="Votre nom ou identifiant"
-                />
-              </FormField>
-
-              <FormField
-                label="Sources d'énergie & composants à isoler"
-                hint="Un composant par ligne. Incluez couleur et position pour de meilleurs prompts YOLO-World."
-              >
-                <textarea
-                  className={clsx(inputCls, "min-h-[108px] resize-y")}
-                  value={components}
-                  onChange={(e) => setComponents(e.target.value)}
-                  placeholder={"Disjoncteur principal (noir)\nCadenas rouge sur moraillon\nVanne pneumatique V-12"}
-                />
-              </FormField>
-            </div>
+    <main className="mx-auto max-w-4xl space-y-6">
+      {/* ── En-tête simplifié ──────────────────────────────────────────────── */}
+      <header className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+            <ShieldCheck className="h-6 w-6" />
           </div>
-
-          {/* Generation mode */}
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <FileText className="h-4 w-4 text-slate-500" strokeWidth={2} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Mode de génération
-              </span>
-            </div>
-
-            <div className="flex gap-2.5">
-              {(["text", "image"] as const).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setSourceType(t)}
-                  className={clsx(
-                    "flex items-center gap-2 rounded-md border px-3.5 py-2 text-xs font-semibold transition-all duration-150",
-                    sourceType === t
-                      ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                      : "border-slate-200 text-slate-600 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700",
-                  )}
-                >
-                  {t === "text" ? <FileText className="h-3.5 w-3.5" /> : <Image className="h-3.5 w-3.5" />}
-                  {t === "text" ? "Texte uniquement" : "Texte + Image (VLLM)"}
-                </button>
-              ))}
-            </div>
-
-            {sourceType === "image" && (
-              <div className="mt-3.5">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/png,image/jpeg,image/jpg"
-                  className="hidden"
-                  onChange={handleImageUpload}
-                />
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className={clsx(
-                    "flex w-full flex-col items-center gap-2 rounded-md border-2 border-dashed py-5 text-xs font-medium transition-all duration-150",
-                    imagePreview
-                      ? "border-blue-300 bg-blue-50 text-blue-700"
-                      : "border-slate-200 text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600",
-                  )}
-                >
-                  <UploadCloud className="h-5 w-5" strokeWidth={1.5} />
-                  {imagePreview ? "Cliquer pour remplacer la photo" : "Cliquer pour téléverser la photo machine"}
-                </button>
-                {imagePreview && (
-                  <img
-                    src={imagePreview}
-                    alt="Aperçu machine"
-                    className="mt-2.5 max-h-40 w-full rounded-md border border-slate-200 object-contain"
-                  />
-                )}
-              </div>
-            )}
+          <div>
+            <h1 className="text-xl font-bold text-slate-900">
+              Générer une procédure LOTO
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Importez un dossier technique, manuel ou schéma industriel. L’analyse crée directement un brouillon prêt pour revue HSE.
+            </p>
           </div>
+        </div>
+      </header>
 
-          {/* LLM Provider */}
-          <div className="rounded-md border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <Cpu className="h-4 w-4 text-slate-500" strokeWidth={2} />
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                Fournisseur LLM
-              </span>
+      {/* ── Zone d'import PDF ───────────────────────────────────────────────── */}
+      <section className="rounded-xl border border-slate-200/80 bg-white p-6 shadow-sm">
+        <div
+          role="button"
+          tabIndex={0}
+          aria-label="Zone de dépôt du document PDF"
+          onClick={() => !isRunning && !isUploading && inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if ((e.key === "Enter" || e.key === " ") && !isRunning && !isUploading) {
+              e.preventDefault();
+              inputRef.current?.click();
+            }
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!isRunning && !isUploading) setIsDragging(true);
+          }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+            if (isRunning || isUploading) return;
+            const dropped = e.dataTransfer.files?.[0];
+            void chooseFile(dropped);
+          }}
+          className={`flex min-h-[180px] cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed p-6 text-center transition-all ${
+            isDragging
+              ? "border-blue-500 bg-blue-50/60"
+              : isRunning || isUploading
+                ? "cursor-not-allowed border-slate-200 bg-slate-50 opacity-70"
+                : "border-slate-300 hover:border-blue-400 hover:bg-slate-50/60"
+          }`}
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept="application/pdf,.pdf"
+            className="hidden"
+            onChange={(e) => void chooseFile(e.target.files?.[0])}
+            disabled={isRunning || isUploading}
+          />
+
+          <UploadCloud className={`h-10 w-10 ${file ? "text-blue-600" : "text-slate-400"}`} />
+
+          {file ? (
+            <div className="mt-3">
+              <p className="font-semibold text-slate-800">{file.name}</p>
+              <p className="text-xs text-slate-500">{(file.size / (1024 * 1024)).toFixed(2)} Mo · Cliquez pour changer de fichier</p>
             </div>
-
-            <select
-              value={provider}
-              onChange={(e) => setProvider(e.target.value as Provider)}
-              className="w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-            >
-              {PROVIDER_OPTIONS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-
-            {PROVIDER_OPTIONS.find((o) => o.value === provider) && (
-              <p className="mt-2 text-sm text-gray-500">
-                {PROVIDER_OPTIONS.find((o) => o.value === provider)!.description}
+          ) : (
+            <div className="mt-3">
+              <p className="text-sm font-medium text-slate-700">
+                Glissez votre fichier PDF ici, ou <span className="text-blue-600 underline">parcourez vos fichiers</span>
               </p>
-            )}
-          </div>
+              <p className="mt-1 text-xs text-slate-400">Schémas P&ID, manuels machine ou notices (max 20 Mo)</p>
+            </div>
+          )}
+        </div>
 
-          {/* Submit */}
+        {fileError && (
+          <div role="alert" className="mt-4 flex items-start gap-2.5 rounded-md border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
+            <div className="flex-1">
+              <p className="font-medium">{fileError}</p>
+            </div>
+          </div>
+        )}
+
+        {networkWarning && (
+          <div role="status" className="mt-4 flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <WifiOff className="h-4 w-4 shrink-0 text-amber-600" />
+            <span>{networkWarning}</span>
+          </div>
+        )}
+
+        {/* Bouton d'action principal */}
+        <div className="mt-5 flex items-center gap-3">
           <button
-            onClick={handleGenerate}
-            disabled={isRunning || !canSubmit}
-            className={clsx(
-              "flex w-full items-center justify-center gap-2 rounded-md px-5 py-3 text-sm font-semibold shadow-sm transition-all duration-150",
-              canSubmit && !isRunning
-                ? "bg-blue-600 text-white hover:bg-blue-700"
-                : "cursor-not-allowed bg-slate-100 text-slate-400",
-            )}
+            type="button"
+            onClick={() => void runUploadAndAnalyze()}
+            disabled={!file || isRunning || isUploading}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 transition-all"
           >
-            {isRunning ? (
-              <>
-                <span className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Génération en cours…
-              </>
+            {isUploading || isRunning ? (
+              <LoaderCircle className="h-4 w-4 animate-spin" />
             ) : (
-              <>
-                <Zap className="h-4 w-4" strokeWidth={2.5} />
-                Générer la procédure LOTO
-                <ChevronRight className="h-4 w-4 opacity-70" />
-              </>
+              <ArrowRight className="h-4 w-4" />
             )}
+            {isUploading
+              ? "Envoi du document…"
+              : isRunning
+                ? "Analyse en cours (redirection automatique dès fin)…"
+                : "Lancer l'analyse et créer le brouillon"}
           </button>
 
-          {mutation.isError && (
-            <div className="flex items-start gap-2.5 rounded-md border border-rose-200 bg-rose-50 px-4 py-3">
-              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-rose-600" />
-              <p className="text-sm text-rose-700">
-                {(mutation.error as ApiError)?.message ?? "La génération a échoué."}
-              </p>
-            </div>
+          {job?.can_retry && !isRunning && (
+            <button
+              type="button"
+              onClick={() => void handleRetry()}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            >
+              <RotateCcw className="h-4 w-4" />
+              Relancer l'analyse
+            </button>
           )}
         </div>
 
-        {/* ── Right: result ───────────────────────────────────────────── */}
-        <div className="space-y-4">
-
-          {isRunning && (
-            <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-slate-200 bg-white p-10 shadow-sm">
-              <LoadingPane label="Exécution du pipeline de génération…" />
+        {/* ── Suivi d'avancement clair ────────────────────────────────────── */}
+        {isRunning && (
+          <div className="mt-6 rounded-lg border border-blue-100 bg-blue-50/40 p-4">
+            <div className="flex items-center justify-between text-xs text-slate-600">
+              <span className="font-semibold text-blue-900">
+                {job?.source_filename ? `Document : ${job.source_filename}` : "Traitement serveur en cours"}
+              </span>
+              <span className="font-mono text-slate-500">
+                Temps écoulé : {elapsedSeconds}s
+              </span>
             </div>
-          )}
 
-          {result && !isRunning && (
-            <>
-              {/* Status banner */}
-              <div
-                className={clsx(
-                  "flex items-start gap-3 rounded-md border px-4 py-3 shadow-sm",
-                  result.is_publishable
-                    ? "border-emerald-200 bg-emerald-50"
-                    : "border-amber-200 bg-amber-50",
-                )}
-              >
-                {result.is_publishable
-                  ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
-                  : <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                }
-                <div>
-                  <p className={clsx(
-                    "text-sm font-semibold",
-                    result.is_publishable ? "text-emerald-700" : "text-amber-700",
-                  )}>
-                    {result.is_publishable
-                      ? "Pipeline terminé — procédure publiable"
-                      : "Pipeline terminé avec erreurs — revue requise avant publication"}
-                  </p>
-                  <p className="mt-0.5 text-[11px] text-slate-500">
-                    Job <code className="font-mono">{result.job_id.slice(0, 8)}</code>
-                    {" · "}Fournisseur : {result.llm_provider ?? "inconnu"}
-                  </p>
-                </div>
+            {elapsedSeconds > 25 && (
+              <div className="mt-3 flex items-center gap-2 rounded bg-blue-100/70 px-3 py-2 text-xs text-blue-900">
+                <Info className="h-4 w-4 shrink-0 text-blue-700" />
+                <span>Le document est dense, l'analyse multimodale continue en tâche de fond… Vous serez redirigé automatiquement.</span>
               </div>
+            )}
 
-              {/* Validation errors */}
-              {result.validation_errors.length > 0 && (
-                <div className="rounded-md border border-rose-200 bg-white p-4 shadow-sm">
-                  <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-rose-600">
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    {result.validation_errors.length} erreur{result.validation_errors.length > 1 ? "s" : ""} de validation
-                  </p>
-                  <ul className="space-y-1.5">
-                    {result.validation_errors.map((e, i) => (
-                      <li key={i} className="text-xs text-slate-700">
-                        <span className="font-mono font-semibold text-rose-600">[{e.code}]</span>{" "}
-                        {e.message}
-                        {e.field_path && (
-                          <code className="ml-1.5 rounded bg-slate-100 px-1 text-[10px] text-slate-500">
-                            {e.field_path}
-                          </code>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+            <ol aria-live="polite" className="mt-4 space-y-2.5">
+              {PROCESS_STEPS.map((step, idx) => {
+                const isDone = currentStageIndex > idx;
+                const isActive = currentStageIndex === idx;
 
-              {/* Validation warnings */}
-              {result.validation_warnings.length > 0 && (
-                <div className="rounded-md border border-amber-200 bg-white p-4 shadow-sm">
-                  <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-amber-600">
-                    <AlertTriangle className="h-3.5 w-3.5" />
-                    {result.validation_warnings.length} avertissement{result.validation_warnings.length > 1 ? "s" : ""}
-                  </p>
-                  <ul className="space-y-1.5">
-                    {result.validation_warnings.map((w, i) => (
-                      <li key={i} className="text-xs text-slate-700">
-                        <span className="font-mono font-semibold text-amber-600">[{w.code}]</span>{" "}
-                        {w.message}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+                return (
+                  <li key={step.id} className="flex items-center gap-3 text-xs">
+                    {isDone ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                    ) : isActive ? (
+                      <LoaderCircle className="h-4 w-4 animate-spin text-blue-600 shrink-0" />
+                    ) : (
+                      <span className="h-4 w-4 rounded-full border border-slate-300 shrink-0" />
+                    )}
+                    <span className={isActive ? "font-bold text-blue-900" : isDone ? "font-medium text-slate-700" : "text-slate-400"}>
+                      {step.label}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+          </div>
+        )}
+      </section>
 
-              {/* Generation notes */}
-              {result.generation_notes.length > 0 && (
-                <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                  <p className="mb-2.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                    <Info className="h-3.5 w-3.5" />
-                    Notes de génération
-                  </p>
-                  <ul className="space-y-1">
-                    {result.generation_notes.map((note, i) => (
-                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-600">
-                        <span className="mt-0.5 text-slate-300">·</span>
-                        {note}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Workflow JSON preview */}
-              <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
-                  Workflow généré (aperçu JSON)
-                </p>
-                <pre className="max-h-72 overflow-auto rounded-md bg-slate-50 p-3 text-[10px] leading-relaxed text-slate-700">
-                  {JSON.stringify(result.workflow_definition, null, 2)}
-                </pre>
-              </div>
-
-              <button
-                onClick={() => navigate("/procedures")}
-                className="flex w-full items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-5 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition-all hover:border-slate-300 hover:bg-slate-50"
-              >
-                Retour à la liste des procédures
-                <ArrowRight className="h-3.5 w-3.5 text-slate-400" />
-              </button>
-            </>
-          )}
-
-          {!result && !isRunning && (
-            <div className="flex min-h-[200px] flex-col items-center justify-center rounded-md border border-dashed border-slate-200 bg-white p-10 text-center">
-              <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-slate-100">
-                <Zap className="h-5 w-5 text-slate-400" strokeWidth={1.5} />
-              </div>
-              <p className="text-sm font-medium text-slate-600">
-                Renseignez les paramètres machine et cliquez sur Générer.
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Le résultat apparaîtra ici une fois le pipeline terminé.
-              </p>
+      {/* ── Historique des analyses récentes ─────────────────────────────────── */}
+      {jobsHistory.length > 0 && (
+        <section className="rounded-xl border border-slate-200/80 bg-white p-5 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowHistory((prev) => !prev)}
+            className="flex w-full items-center justify-between text-sm font-semibold text-slate-800"
+          >
+            <div className="flex items-center gap-2">
+              <History className="h-4 w-4 text-slate-500" />
+              <span>Historique des analyses récentes ({jobsHistory.length})</span>
             </div>
+            {showHistory ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
+          </button>
+
+          {showHistory && (
+            <ul className="mt-3 divide-y divide-slate-100 text-xs">
+              {jobsHistory.map((item) => {
+                const dateStr = item.created_at ? new Date(item.created_at).toLocaleString("fr-FR") : "";
+                const targetProc = item.procedure_id;
+
+                return (
+                  <li
+                    key={item.job_id}
+                    className="flex items-center justify-between py-2.5"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <p className="truncate font-medium text-slate-800">
+                        {item.source_filename || "Document PDF"}
+                      </p>
+                      <p className="text-slate-400">{dateStr}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                          item.status === "succeeded"
+                            ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                            : item.status === "failed"
+                              ? "bg-rose-50 text-rose-700 border border-rose-200"
+                              : "bg-blue-50 text-blue-700 border border-blue-200"
+                        }`}
+                      >
+                        {item.status === "succeeded"
+                          ? "Terminé"
+                          : item.status === "failed"
+                            ? "Échec"
+                            : "En cours"}
+                      </span>
+
+                      {item.status === "succeeded" && targetProc ? (
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/procedures/${encodeURIComponent(String(targetProc))}`)}
+                          className="flex items-center gap-1 rounded border border-blue-200 bg-blue-50 px-2.5 py-1 text-blue-700 hover:bg-blue-100 font-semibold text-[11px]"
+                        >
+                          <span>Ouvrir la revue</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </button>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
           )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-const inputCls =
-  "w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-800 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all";
-
-function FormField({
-  label,
-  required,
-  hint,
-  children,
-}: {
-  label: string;
-  required?: boolean;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="mb-1 flex items-center gap-1 text-xs font-semibold text-slate-700">
-        {label}
-        {required && <span className="text-rose-500">*</span>}
-      </label>
-      {children}
-      {hint && <p className="mt-1 text-[11px] text-slate-400">{hint}</p>}
-    </div>
+        </section>
+      )}
+    </main>
   );
 }

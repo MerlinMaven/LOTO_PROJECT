@@ -3,17 +3,17 @@
 import type { ProcedureStatus, GenerationSource } from "@/types/procedure";
 
 export const STATUS_LABELS: Record<ProcedureStatus, string> = {
-  draft_pending_review: "Draft · Pending Review",
-  approved: "Approved",
-  published: "Published",
-  archived: "Archived",
+  draft_pending_review: "Brouillon · En attente de revue",
+  approved: "Approuvé",
+  published: "Publié",
+  archived: "Archivé",
 };
 
 export const STATUS_SHORT: Record<ProcedureStatus, string> = {
-  draft_pending_review: "Draft",
-  approved: "Approved",
-  published: "Published",
-  archived: "Archived",
+  draft_pending_review: "Brouillon",
+  approved: "Approuvé",
+  published: "Publié",
+  archived: "Archivé",
 };
 
 /** Tailwind classes for status pills (text + bg + border). */
@@ -51,13 +51,22 @@ export function allowedTransitions(from: ProcedureStatus): ProcedureStatus[] {
 }
 
 export const SOURCE_LABELS: Record<GenerationSource, string> = {
-  manual: "Manual",
-  llm_text: "AI · Text",
-  llm_vision: "AI · Vision",
-  pdf_extracted: "AI · PDF",
-  video_extracted: "AI · Video",
+  manual: "Manuel",
+  llm_text: "IA · Texte",
+  llm_vision: "IA · Vision",
+  pdf_extracted: "IA · PDF",
+  video_extracted: "IA · Vidéo",
 };
 
-export function isEditable(status: ProcedureStatus): boolean {
-  return status === "draft_pending_review";
+export function isEditable(status: ProcedureStatus | string): boolean {
+  return normalizeStatus(status) === "draft_pending_review";
+}
+
+export function normalizeStatus(status?: string | null): ProcedureStatus {
+  if (!status) return "draft_pending_review";
+  const s = status.trim().toLowerCase();
+  if (s === "published" || s.includes("publish")) return "published";
+  if (s === "approved" || s.includes("approv")) return "approved";
+  if (s === "archived") return "archived";
+  return "draft_pending_review";
 }

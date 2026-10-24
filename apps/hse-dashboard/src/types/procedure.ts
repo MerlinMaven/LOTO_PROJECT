@@ -60,8 +60,9 @@ export interface ProcedureRead {
   active_version_id: string | null;
   created_at: string;
   updated_at: string;
-  versions: ProcedureVersionSummary[];
+  versions: ProcedureVersionRead[];
   active_version: ProcedureVersionRead | null;
+  review_version?: ProcedureVersionRead | null;
 }
 
 /** Dashboard home row — mirrors ProcedureListItem. */
@@ -77,6 +78,7 @@ export interface ProcedureListItem {
   overall_confidence: number | null;
   open_validation_errors: number;
   has_published_version: boolean;
+  workflow_definition?: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -90,6 +92,7 @@ export interface DraftUpdatePayload {
 }
 
 export interface ApprovalCreatePayload {
+  version_id?: string;
   decision: ApprovalDecision;
   notes?: string;
   approved_by: string;

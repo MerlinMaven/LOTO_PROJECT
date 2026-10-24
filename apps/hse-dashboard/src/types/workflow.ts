@@ -1,42 +1,40 @@
-/**
- * Canonical workflow_definition structure (phases -> stages -> steps), plus the
- * `_generation_metadata` block the DraftPublisher embeds for the HSE reviewer.
- *
- * These mirror the backend's generated JSON. They are intentionally permissive
- * (optional fields) because the reviewer edits a live, partially-complete draft.
- */
-
-export type PhaseType =
-  | "lockout"
-  | "tagout"
-  | "verification"
-  | "maintenance"
-  | "restoration";
+/** Versioned procedure draft contract. Unknown extension fields remain round-trippable. */
+export type PhaseType = string;
 
 export type ValidationMethod =
-  | "vision_detection"
-  | "inverse_vision_absence"
-  | "manual_confirmation"
-  | "sensor_threshold";
+  | "visual_observation" | "measurement" | "human_confirmation"
+  | "sensor_signal" | "combined_evidence" | "not_defined";
 
-export interface StepValidation {
+export interface StepVerification {
   method: ValidationMethod | string;
-  expected_state?: string;
-  /** YOLO-World candidate prompts — reviewer-editable suggestions, never results. */
-  yolo_candidate_prompts?: string[];
+  criteria?: string[];
+  required_evidence?: string[];
+  instrument_refs?: string[];
+  indeterminate_when?: string[];
+  candidate_prompts?: string[];
   [key: string]: unknown;
 }
+export type StepValidation = StepVerification;
 
 export interface WorkflowStep {
   step_id: string;
   sequence: number;
   instruction: string;
   component_ref?: string | null;
+  component_refs?: string[];
+  fact_refs?: string[];
+  evidence_refs?: { source_id: string; page?: number; quote?: string }[];
+  preconditions?: string[];
+  depends_on?: string[];
+  expected_result?: string;
+  rationale?: string;
+  basis?: string;
+  unresolved_conditions?: string[];
   safety_note?: string;
-  /** Reviewer-authored rollback / abort guidance for this step. */
   rollback_instruction?: string;
   warnings?: string[];
   validation?: StepValidation;
+  verification?: StepVerification;
   [key: string]: unknown;
 }
 
@@ -50,7 +48,7 @@ export interface WorkflowStage {
 
 export interface WorkflowPhase {
   phase_id: string;
-  phase_type: PhaseType | string;
+  phase_type: PhaseType;
   sequence: number;
   title: string;
   description?: string;
@@ -58,7 +56,40 @@ export interface WorkflowPhase {
   [key: string]: unknown;
 }
 
-// ── Embedded generation metadata (_generation_metadata) ──────────────────────
+export interface InvariantFeature {
+  feature_type: "symbol" | "pictogram" | "marking" | "local_geometry" | "fixed_text" | "color_pattern" | string;
+  description: string;
+  details?: string;
+  source_ref?: string;
+  [key: string]: unknown;
+}
+
+export interface VerifiableState {
+  state_name: string;
+  physical_rule: string;
+  supported_by_unity?: boolean;
+  candidate_prompt?: string;
+  requires_human_confirmation?: boolean;
+  [key: string]: unknown;
+}
+
+export interface WorkflowComponent {
+  component_id: string;
+  component_name?: string;
+  internal_id?: string;
+  source_tag?: string;
+  canonical_name?: string;
+  label: string;
+  description?: string;
+  component_type?: string;
+  unity_class_id?: string;
+  invariant_features?: InvariantFeature[];
+  verifiable_states?: VerifiableState[];
+  relations?: string[];
+  clarification_needed?: boolean;
+  clarification_note?: string;
+  [key: string]: unknown;
+}
 
 export interface YoloComponentMetadata {
   component_id: string;
@@ -77,7 +108,6 @@ export interface GenerationMetadata {
   prompt_version?: string;
   generator_version?: string;
   overall_confidence?: number;
-  /** component_id -> per-component vision metadata. */
   yolo_metadata?: Record<string, YoloComponentMetadata>;
   generation_notes?: string[];
   validation_warnings?: { code: string; message: string }[];
@@ -85,7 +115,23 @@ export interface GenerationMetadata {
 }
 
 export interface WorkflowDefinition {
+  schema_version?: string;
+  revision_id?: string;
+  machine_id?: string;
+  machine_name?: string;
+  maintenance_objective?: string;
+  expected_final_state?: string;
+  source_documents?: Record<string, unknown>[];
+  components?: WorkflowComponent[];
+  technical_facts?: Record<string, unknown>[];
+  inferences?: Record<string, unknown>[];
+  visual_observations?: Record<string, unknown>[];
+  unknowns?: Record<string, unknown>[];
+  contradictions?: Record<string, unknown>[];
   phases: WorkflowPhase[];
+  clarifications_required?: Record<string, unknown>[];
+  validation_diagnostics?: { code: string; category: string; severity: string; message: string; entity_id?: string }[];
+  review?: Record<string, unknown>;
   _generation_metadata?: GenerationMetadata;
   [key: string]: unknown;
 }

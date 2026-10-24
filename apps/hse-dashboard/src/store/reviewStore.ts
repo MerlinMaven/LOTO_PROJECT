@@ -24,6 +24,7 @@ import {
 interface ReviewState {
   versionId: string | null;
   original: WorkflowDefinition | null;
+  initialDraft: WorkflowDefinition | null;
   draft: WorkflowDefinition | null;
 
   /** Load a version into the editor (resets any unsaved edits). */
@@ -55,12 +56,14 @@ interface ReviewState {
 export const useReviewStore = create<ReviewState>((set, get) => ({
   versionId: null,
   original: null,
+  initialDraft: null,
   draft: null,
 
   load: (version) =>
     set({
       versionId: version.id,
       original: deepClone(version.workflow_definition),
+      initialDraft: deepClone(version.workflow_definition),
       draft: deepClone(version.workflow_definition),
     }),
 
@@ -72,11 +75,12 @@ export const useReviewStore = create<ReviewState>((set, get) => ({
   },
 
   commitSaved: (version) =>
-    set({
+    set((state) => ({
       versionId: version.id,
       original: deepClone(version.workflow_definition),
+      initialDraft: state.initialDraft || deepClone(version.workflow_definition),
       draft: deepClone(version.workflow_definition),
-    }),
+    })),
 
   patchComponent: (componentId, patch) => {
     const { draft } = get();

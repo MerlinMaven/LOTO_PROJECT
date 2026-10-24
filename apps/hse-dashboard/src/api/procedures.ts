@@ -49,19 +49,36 @@ export const proceduresApi = {
 
   async approve(
     procedureId: string,
+    versionId: string,
     payload: ApprovalCreatePayload,
   ): Promise<ApprovalRead> {
     const { data } = await http.post<ApprovalRead>(
-      `/v1/procedures/${procedureId}/approve`,
+      `/v1/procedures/${procedureId}/versions/${versionId}/approve`,
       payload,
     );
     return data;
   },
 
-  async publish(procedureId: string): Promise<ProcedurePublishResponse> {
+  async publish(procedureId: string, versionId: string): Promise<ProcedurePublishResponse> {
     const { data } = await http.post<ProcedurePublishResponse>(
-      `/v1/procedures/${procedureId}/publish`,
+      `/v1/procedures/${procedureId}/versions/${versionId}/publish`,
       {},
+    );
+    return data;
+  },
+
+  async resolveClarification(
+    procedureId: string,
+    payload: {
+      clarification_id: string;
+      answer: string;
+      rationale?: string;
+      step_id?: string;
+    },
+  ): Promise<ProcedureVersionRead> {
+    const { data } = await http.post<ProcedureVersionRead>(
+      `/v1/procedures/${procedureId}/resolve-clarification`,
+      payload,
     );
     return data;
   },

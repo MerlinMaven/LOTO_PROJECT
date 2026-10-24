@@ -17,27 +17,30 @@ const KIND_CHIP: Record<string, string> = {
 };
 
 const KIND_LABEL: Record<string, string> = {
-  added: "added",
-  removed: "removed",
-  modified: "changed",
+  added: "Ajouté",
+  removed: "Supprimé",
+  modified: "Modifié",
 };
 
 export function DiffViewer() {
   const original = useReviewStore((s) => s.original);
+  const initialDraft = useReviewStore((s) => s.initialDraft);
   const draft = useReviewStore((s) => s.draft);
 
-  const changes = useMemo(() => {
-    if (!original || !draft) return [];
-    return diffWorkflows(original, draft);
-  }, [original, draft]);
+  const baseline = initialDraft || original;
 
-  if (!original || !draft) return null;
+  const changes = useMemo(() => {
+    if (!baseline || !draft) return [];
+    return diffWorkflows(baseline, draft);
+  }, [baseline, draft]);
+
+  if (!baseline || !draft) return null;
 
   if (changes.length === 0) {
     return (
       <EmptyState
-        title="No changes"
-        description="The working draft matches the generated original. Edit components, steps, or vision prompts to see changes here."
+        title="Aucune modification"
+        description="Le brouillon de travail correspond à l'original généré. Modifiez des composants ou des étapes pour voir les écarts ici."
       />
     );
   }
@@ -52,8 +55,7 @@ export function DiffViewer() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-steel-500">
-        {changes.length} field change{changes.length !== 1 ? "s" : ""} from the
-        generated original.
+        {changes.length} modification{changes.length > 1 ? "s" : ""} par rapport à l'original généré.
       </p>
 
       {Array.from(grouped.entries()).map(([scope, items]) => (
@@ -83,7 +85,7 @@ export function DiffViewer() {
                 {change.kind !== "added" && change.before && (
                   <div className="mb-1">
                     <span className="mr-1 text-[10px] font-semibold uppercase text-red-500">
-                      before
+                      avant
                     </span>
                     <span className="text-steel-500 line-through">
                       {change.before}
@@ -93,7 +95,7 @@ export function DiffViewer() {
                 {change.kind !== "removed" && change.after && (
                   <div>
                     <span className="mr-1 text-[10px] font-semibold uppercase text-green-600">
-                      after
+                      après
                     </span>
                     <span className="text-steel-800">{change.after}</span>
                   </div>

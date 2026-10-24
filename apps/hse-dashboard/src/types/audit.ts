@@ -10,4 +10,5 @@ export interface AuditEvent {
   payload: Record<string, unknown>;
   ip_address: string | null;
   occurred_at: string;
+  created_at?: string;
 }

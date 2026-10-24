@@ -39,8 +39,20 @@ http.interceptors.response.use(
 
     // FastAPI request-validation errors (422) have a different shape.
     if (status === 422) {
+      let message = "Erreur de validation des données transmises.";
+      if (body && typeof body === "object" && "detail" in body && Array.isArray((body as Record<string, unknown>).detail)) {
+        const details = (body as { detail: Array<{ msg?: string; loc?: string[] }> }).detail;
+        const formatted = details
+          .map((d) => {
+            const field = d.loc ? d.loc.filter((part) => part !== "body").join(".") : "";
+            return field ? `${field} (${d.msg})` : d.msg;
+          })
+          .filter(Boolean)
+          .join(", ");
+        if (formatted) message = `Validation rejetée : ${formatted}`;
+      }
       return Promise.reject(
-        new ApiError("VALIDATION_ERROR", "Request validation failed.", status, {
+        new ApiError("VALIDATION_ERROR", message, status, {
           raw: body,
         }),
       );

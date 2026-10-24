@@ -4,19 +4,20 @@ import react from "@vitejs/plugin-react";
 import path from "node:path";
 import fs from "node:fs";
 
-const canonicalRoot = fs.realpathSync(process.cwd());
+const dashboardRoot = path.resolve(__dirname);
 
 // The dashboard talks to the existing FastAPI backend.
 // In dev, /api is proxied to the backend so there are no CORS concerns.
 export default defineConfig({
-  root: canonicalRoot,
+  root: dashboardRoot,
   plugins: [react()],
   resolve: {
     alias: {
-      "@": path.resolve(canonicalRoot, "./src"),
+      "@": path.resolve(dashboardRoot, "./src"),
     },
   },
   server: {
+    host: "0.0.0.0",
     port: 5173,
     proxy: {
       "/api": {
@@ -27,8 +28,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
+    environment: "node",
     css: false,
   },
 });

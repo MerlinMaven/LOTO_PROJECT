@@ -5,11 +5,11 @@ import { Button } from "@/components/ui/Button";
 export function NotFound() {
   return (
     <EmptyState
-      title="Page not found"
-      description="The page you are looking for does not exist or has moved."
+      title="Page introuvable"
+      description="La page que vous recherchez n'existe pas ou a été déplacée."
       action={
         <Link to="/procedures">
-          <Button variant="primary">Back to procedures</Button>
+          <Button variant="primary">Retour aux procédures</Button>
         </Link>
       }
     />

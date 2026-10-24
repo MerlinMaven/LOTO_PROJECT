@@ -4,7 +4,7 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString("fr-FR", {
     year: "numeric",
     month: "short",
     day: "2-digit",
@@ -31,7 +31,7 @@ export function formatRelative(iso: string | null | undefined): string {
   for (const [limit, name] of units) {
     if (abs < limit) {
       const value = Math.round(diffSec / prev);
-      const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+      const rtf = new Intl.RelativeTimeFormat("fr-FR", { numeric: "auto" });
       return rtf.format(-value, name as Intl.RelativeTimeFormatUnit);
     }
     prev = limit;

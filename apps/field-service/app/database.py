@@ -1,7 +1,7 @@
 """
-SmartLOTO Field Service — Couche d'accès aux données.
-Offre une interface unifiée (compatible Supabase) qui bascule automatiquement
-sur SQLite local si Supabase n'est pas configuré.
+SmartLOTO Field Service â€” Couche d'accÃ¨s aux donnÃ©es.
+Offre une interface unifiÃ©e (compatible Supabase) qui bascule automatiquement
+sur SQLite local si Supabase n'est pas configurÃ©.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ class SQLiteTableQuery:
             results = []
             for row in rows:
                 row_dict = dict(zip(col_names, row))
-                # Désérialisation des colonnes JSON
+                # DÃ©sÃ©rialisation des colonnes JSON
                 if "workflow_stages" in row_dict and isinstance(row_dict["workflow_stages"], str):
                     try:
                         row_dict["workflow_stages"] = json.loads(row_dict["workflow_stages"])
@@ -77,7 +77,7 @@ class SQLiteTableQuery:
                         pass
                 results.append(row_dict)
 
-            # Filtrage éventuel des champs si select explicite autre que "*"
+            # Filtrage Ã©ventuel des champs si select explicite autre que "*"
             if self._select_fields != "*":
                 fields = [f.strip() for f in self._select_fields.split(",")]
                 filtered = []
@@ -95,7 +95,7 @@ class SQLiteTableQuery:
             if "started_at" not in data and self.table_name == "interventions":
                 data["started_at"] = datetime.now().isoformat()
 
-            # Sérialiser le JSON
+            # SÃ©rialiser le JSON
             for k in ("workflow_stages", "logs"):
                 if k in data and not isinstance(data[k], str):
                     data[k] = json.dumps(data[k])
@@ -106,7 +106,7 @@ class SQLiteTableQuery:
             cursor.execute(sql, list(data.values()))
             self.conn.commit()
 
-            # Relire la ligne insérée
+            # Relire la ligne insÃ©rÃ©e
             last_id = data.get("id") or data.get("machine_id")
             if last_id:
                 col_id = "id" if "id" in data else "machine_id"
@@ -117,7 +117,7 @@ class SQLiteTableQuery:
             if not self._update_data:
                 return SQLiteQueryResult([])
             data = dict(self._update_data)
-            # Sérialiser le JSON
+            # SÃ©rialiser le JSON
             for k in ("workflow_stages", "logs"):
                 if k in data and not isinstance(data[k], str):
                     data[k] = json.dumps(data[k])
@@ -132,95 +132,6 @@ class SQLiteTableQuery:
             return SQLiteQueryResult([data])
 
         return SQLiteQueryResult([])
-
-
-SAMPLE_PUMP_WORKFLOW = {
-    "lockout": [
-        {
-            "stage_id": 1,
-            "title": "Consignation Électrique",
-            "actions": [
-                {
-                    "action_id": "step_1",
-                    "description": "Tourner le sectionneur Q1 sur la position 0 (OFF) et apposer le cadenas rouge.",
-                    "vision_prompt": "red padlock on electrical rotary switch in off position",
-                    "completion_check": "Cadenas en place et sectionneur verrouillé.",
-                    "spatial_guide": {
-                        "hologram_type": "padlock",
-                        "pos_x": 0.15,
-                        "pos_y": 1.20,
-                        "pos_z": 0.45,
-                        "rot_x": 0.0,
-                        "rot_y": 90.0,
-                        "rot_z": 0.0,
-                    },
-                }
-            ],
-        },
-        {
-            "stage_id": 2,
-            "title": "Vérification d'Absence de Tension (VAT)",
-            "actions": [
-                {
-                    "action_id": "step_2",
-                    "description": "Contrôler la tension résiduelle aux bornes du moteur à l'aide d'un multimètre certifié.",
-                    "vision_prompt": "digital multimeter measuring zero voltage display",
-                    "completion_check": "Affichage 0.00 V confirmé.",
-                    "spatial_guide": {
-                        "hologram_type": "sensor",
-                        "pos_x": -0.20,
-                        "pos_y": 0.95,
-                        "pos_z": 0.50,
-                        "rot_x": 0.0,
-                        "rot_y": 0.0,
-                        "rot_z": 0.0,
-                    },
-                }
-            ],
-        },
-    ],
-    "restoration": [
-        {
-            "stage_id": 3,
-            "title": "Déconsignation et Remise en Service",
-            "actions": [
-                {
-                    "action_id": "step_3",
-                    "description": "Retirer le cadenas de consignation et réarmer le sectionneur principal sur 1 (ON).",
-                    "vision_prompt": "electrical rotary switch in on position without padlock",
-                    "completion_check": "Sectionneur réarmé sur 1 (ON).",
-                    "spatial_guide": {
-                        "hologram_type": "switch",
-                        "pos_x": 0.15,
-                        "pos_y": 1.20,
-                        "pos_z": 0.45,
-                        "rot_x": 0.0,
-                        "rot_y": 0.0,
-                        "rot_z": 0.0,
-                    },
-                }
-            ],
-        }
-    ],
-    "anchors": {
-        "Sectionneur_Q1": {
-            "pos_x": 0.15,
-            "pos_y": 1.20,
-            "pos_z": 0.45,
-            "rot_x": 0.0,
-            "rot_y": 90.0,
-            "rot_z": 0.0,
-        },
-        "Moteur_Pompe": {
-            "pos_x": -0.20,
-            "pos_y": 0.95,
-            "pos_z": 0.50,
-            "rot_x": 0.0,
-            "rot_y": 0.0,
-            "rot_z": 0.0,
-        },
-    },
-}
 
 
 class LocalSQLiteClient:
@@ -239,13 +150,13 @@ class LocalSQLiteClient:
         conn = self._get_connection()
         cur = conn.cursor()
 
-        # Table des procédures LOTO
+        # Table des procÃ©dures LOTO
         cur.execute("""
             CREATE TABLE IF NOT EXISTS procedures (
                 machine_id TEXT PRIMARY KEY,
                 machine_name TEXT NOT NULL,
                 created_by_hse TEXT NOT NULL,
-                status TEXT DEFAULT 'APPROVED',
+                status TEXT DEFAULT 'DRAFT_PENDING_REVIEW',
                 workflow_stages TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -257,6 +168,7 @@ class LocalSQLiteClient:
             CREATE TABLE IF NOT EXISTS interventions (
                 id TEXT PRIMARY KEY,
                 machine_id TEXT NOT NULL,
+                procedure_version_id TEXT,
                 operator_name TEXT NOT NULL,
                 status TEXT DEFAULT 'IN_PROGRESS',
                 current_stage_id INT DEFAULT 1,
@@ -267,45 +179,10 @@ class LocalSQLiteClient:
                 completed_at TIMESTAMP
             )
         """)
-
-        # Vérifier si PUMP-001 existe spécifiquement
-        cur.execute("SELECT workflow_stages, status FROM procedures WHERE machine_id = 'PUMP-001'")
-        row = cur.fetchone()
-
-        if not row:
-            cur.execute("""
-                INSERT INTO procedures (machine_id, machine_name, created_by_hse, status, workflow_stages)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                "PUMP-001",
-                "Pompe Principale d'Extraction",
-                "hse_supervisor@smartloto.io",
-                "APPROVED",
-                json.dumps(SAMPLE_PUMP_WORKFLOW)
-            ))
-            conn.commit()
-            print(f"[INFO-SEED] Machine PUMP-001 inseree avec succes dans {self.db_path}")
-        else:
-            # Vérifier que le workflow_stages existant est complet
-            existing_stages_raw = row[0]
-            needs_update = False
-            try:
-                parsed = json.loads(existing_stages_raw) if isinstance(existing_stages_raw, str) else existing_stages_raw
-                if not parsed or not parsed.get("lockout") or not parsed.get("restoration"):
-                    needs_update = True
-            except Exception:
-                needs_update = True
-
-            if needs_update or row[1] != "APPROVED":
-                cur.execute("""
-                    UPDATE procedures 
-                    SET machine_name = 'Pompe Principale d''Extraction', status = 'APPROVED', workflow_stages = ?
-                    WHERE machine_id = 'PUMP-001'
-                """, (json.dumps(SAMPLE_PUMP_WORKFLOW),))
-                conn.commit()
-                print(f"[INFO-SEED] Machine PUMP-001 verifiee et mise a jour avec succes dans {self.db_path}")
-            else:
-                print(f"[INFO-SEED] Machine PUMP-001 deja presente et approuvee dans {self.db_path}")
+        cur.execute("PRAGMA table_info(interventions)")
+        columns = {row[1] for row in cur.fetchall()}
+        if "procedure_version_id" not in columns:
+            cur.execute("ALTER TABLE interventions ADD COLUMN procedure_version_id TEXT")
 
         conn.close()
 
@@ -315,9 +192,8 @@ class LocalSQLiteClient:
         return query
 
 
-# ── Initialisation globale de la base de données (100% Local SQLite) ──────────
-db: Any = LocalSQLiteClient(str(SQLITE_DB_PATH))
-print(f"[INFO] Base SQLite locale activee (Zero Cloud) : {SQLITE_DB_PATH}")
+# â”€â”€ Initialisation globale de la base de donnÃ©es (100% Local SQLite) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+db: Any = None
 
 
 def init_db() -> None:

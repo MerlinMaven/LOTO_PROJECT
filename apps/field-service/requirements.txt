@@ -3,6 +3,7 @@ uvicorn[standard]>=0.30.0
 supabase>=2.4.0
 python-dotenv>=1.0.1
 ultralytics>=8.2.0
+git+https://github.com/ultralytics/CLIP.git@7ffa84b3bfa40c42ecc1c77147a855e69cb2dd40
 opencv-python-headless>=4.9.0
 reportlab>=4.2.0
 python-multipart>=0.0.12

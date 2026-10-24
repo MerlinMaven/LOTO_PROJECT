@@ -6,7 +6,7 @@ NE PAS RENOMMER les champs sans mettre à jour SmartLOTOClient.cs.
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 
@@ -32,6 +32,7 @@ class ActionOverride(BaseModel):
     action_id: str
     image_base64: str
     reason: str
+    verification_method: Optional[str] = None
 
 
 class CloseIntervention(BaseModel):

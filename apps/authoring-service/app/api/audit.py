@@ -50,6 +50,7 @@ async def query_audit(
             procedure_id=item.procedure_id,
             payload=item.payload or {},
             created_at=item.created_at,
+            occurred_at=item.created_at,
         )
         for item in items
     ]

@@ -1,0 +1,426 @@
+{
+  "machine_id": "SL-POC-01",
+  "machine_name": "SmartLOTO Cardboard Prototype — Remplacement d’une ampoule",
+  "procedure_id": "SL-POC-01-BULB-REPLACEMENT",
+  "status": "draft_pending_clarification",
+  "lockout": [
+    {
+      "stage_id": 1,
+      "title": "Identification, isolation et accès sécurisé",
+      "actions": [
+        {
+          "action_id": "identify",
+          "description": "Identifier l’équipement SL-POC-01 et la cible ampoule avant intervention.",
+          "completion_check": "Équipement et cible identifiés par l’opérateur.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Équipement et cible identifiés par l’opérateur."
+          },
+          "component_ref": null
+        },
+        {
+          "action_id": "switch_off",
+          "description": "Basculer l’interrupteur blanc vers le bas, position OFF.",
+          "completion_check": "Position OFF confirmée; la présence de l’interrupteur seule ne suffit pas.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Position OFF confirmée; la présence de l’interrupteur seule ne suffit pas."
+          },
+          "component_ref": "main_switch"
+        },
+        {
+          "action_id": "remove_battery",
+          "description": "Retirer la pile du logement fonctionnel de droite du boîtier rouge.",
+          "completion_check": "Confirmer visuellement le support fonctionnel vide; si la vue est masquée par une main, résultat indéterminé.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Confirmer visuellement le support fonctionnel vide; si la vue est masquée par une main, résultat indéterminé."
+          },
+          "component_ref": "battery_holder_right"
+        },
+        {
+          "action_id": "store_battery",
+          "description": "Placer immédiatement la pile dans la Safe Box identifiée par le cadenas.",
+          "completion_check": "Pile visible dans la zone Safe Box.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Pile visible dans la zone Safe Box."
+          },
+          "component_ref": "safe_box"
+        },
+        {
+          "action_id": "open_guard",
+          "description": "Ouvrir le carter jusqu’à aligner le carré blanc avec le cercle vide.",
+          "completion_check": "Alignement géométrique carré–cercle vide confirmé. Sens de déplacement à clarifier avant approbation.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Alignement géométrique carré–cercle vide confirmé. Sens de déplacement à clarifier avant approbation."
+          },
+          "component_ref": "guard"
+        },
+        {
+          "action_id": "replace_bulb",
+          "description": "Remplacer l’ampoule défectueuse par une ampoule compatible.",
+          "completion_check": "Confirmation explicite de l’opérateur requise; une photo finale ne prouve pas le remplacement.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Confirmation explicite de l’opérateur requise; une photo finale ne prouve pas le remplacement."
+          },
+          "component_ref": "bulb"
+        }
+      ]
+    }
+  ],
+  "restoration": [
+    {
+      "stage_id": 2,
+      "title": "Remise en état, contrôle et clôture",
+      "actions": [
+        {
+          "action_id": "close_guard",
+          "description": "Fermer le carter jusqu’à aligner le carré blanc avec le cercle noir plein.",
+          "completion_check": "Alignement géométrique carré–cercle noir plein confirmé. Sens de déplacement à clarifier avant approbation.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Alignement géométrique carré–cercle noir plein confirmé. Sens de déplacement à clarifier avant approbation."
+          },
+          "component_ref": "guard"
+        },
+        {
+          "action_id": "retrieve_battery",
+          "description": "Récupérer la pile dans la Safe Box.",
+          "completion_check": "Pile récupérée de la zone de consignation.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Pile récupérée de la zone de consignation."
+          },
+          "component_ref": "safe_box"
+        },
+        {
+          "action_id": "reinsert_battery",
+          "description": "Réinsérer la pile dans l’emplacement fonctionnel de droite, sans X, en alignant le pôle positif sur le signe +.",
+          "completion_check": "Emplacement et polarité confirmés visuellement ou par confirmation manuelle identifiée; objet détecté seul insuffisant.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Emplacement et polarité confirmés visuellement ou par confirmation manuelle identifiée; objet détecté seul insuffisant."
+          },
+          "component_ref": "battery_holder_right"
+        },
+        {
+          "action_id": "switch_on",
+          "description": "Basculer l’interrupteur vers le haut, position ON, après fermeture du carter et réinsertion correcte de la pile.",
+          "completion_check": "Position ON confirmée après sécurisation mécanique.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Position ON confirmée après sécurisation mécanique."
+          },
+          "component_ref": "main_switch"
+        },
+        {
+          "action_id": "functional_check",
+          "description": "Contrôler le fonctionnement de l’ampoule et consigner le résultat.",
+          "completion_check": "Résultat du contrôle fonctionnel enregistré par l’opérateur.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Résultat du contrôle fonctionnel enregistré par l’opérateur."
+          },
+          "component_ref": null
+        },
+        {
+          "action_id": "sign_close",
+          "description": "Présenter le récapitulatif, signer et clôturer l’intervention.",
+          "completion_check": "Signature non vide requise pour clôturer.",
+          "validation": {
+            "method": "manual_confirmation",
+            "expected_state": "Signature non vide requise pour clôturer."
+          },
+          "component_ref": null
+        }
+      ]
+    }
+  ],
+  "phases": [
+    {
+      "phase_id": "lockout",
+      "phase_type": "lockout",
+      "sequence": 1,
+      "title": "Identification et consignation",
+      "stages": [
+        {
+          "stage_id": "identify",
+          "sequence": 1,
+          "title": "Identifier l’équipement SL-POC-01 et la cible ampoule avant intervention.",
+          "steps": [
+            {
+              "step_id": "identify",
+              "sequence": 1,
+              "instruction": "Identifier l’équipement SL-POC-01 et la cible ampoule avant intervention.",
+              "component_ref": null,
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Équipement et cible identifiés par l’opérateur."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "switch_off",
+          "sequence": 2,
+          "title": "Basculer l’interrupteur blanc vers le bas, position OFF.",
+          "steps": [
+            {
+              "step_id": "switch_off",
+              "sequence": 2,
+              "instruction": "Basculer l’interrupteur blanc vers le bas, position OFF.",
+              "component_ref": "main_switch",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Position OFF confirmée; la présence de l’interrupteur seule ne suffit pas."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "remove_battery",
+          "sequence": 3,
+          "title": "Retirer la pile du logement fonctionnel de droite du boîtier rouge.",
+          "steps": [
+            {
+              "step_id": "remove_battery",
+              "sequence": 3,
+              "instruction": "Retirer la pile du logement fonctionnel de droite du boîtier rouge.",
+              "component_ref": "battery_holder_right",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Confirmer visuellement le support fonctionnel vide; si la vue est masquée par une main, résultat indéterminé."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "store_battery",
+          "sequence": 4,
+          "title": "Placer immédiatement la pile dans la Safe Box identifiée par le cadenas.",
+          "steps": [
+            {
+              "step_id": "store_battery",
+              "sequence": 4,
+              "instruction": "Placer immédiatement la pile dans la Safe Box identifiée par le cadenas.",
+              "component_ref": "safe_box",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Pile visible dans la zone Safe Box."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "open_guard",
+          "sequence": 5,
+          "title": "Ouvrir le carter jusqu’à aligner le carré blanc avec le cercle vide.",
+          "steps": [
+            {
+              "step_id": "open_guard",
+              "sequence": 5,
+              "instruction": "Ouvrir le carter jusqu’à aligner le carré blanc avec le cercle vide.",
+              "component_ref": "guard",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Alignement géométrique carré–cercle vide confirmé. Sens de déplacement à clarifier avant approbation."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "replace_bulb",
+          "sequence": 6,
+          "title": "Remplacer l’ampoule défectueuse par une ampoule compatible.",
+          "steps": [
+            {
+              "step_id": "replace_bulb",
+              "sequence": 6,
+              "instruction": "Remplacer l’ampoule défectueuse par une ampoule compatible.",
+              "component_ref": "bulb",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Confirmation explicite de l’opérateur requise; une photo finale ne prouve pas le remplacement."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "phase_id": "maintenance",
+      "phase_type": "maintenance",
+      "sequence": 2,
+      "title": "Maintenance et remise en service",
+      "stages": [
+        {
+          "stage_id": "close_guard",
+          "sequence": 7,
+          "title": "Fermer le carter jusqu’à aligner le carré blanc avec le cercle noir plein.",
+          "steps": [
+            {
+              "step_id": "close_guard",
+              "sequence": 7,
+              "instruction": "Fermer le carter jusqu’à aligner le carré blanc avec le cercle noir plein.",
+              "component_ref": "guard",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Alignement géométrique carré–cercle noir plein confirmé. Sens de déplacement à clarifier avant approbation."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "retrieve_battery",
+          "sequence": 8,
+          "title": "Récupérer la pile dans la Safe Box.",
+          "steps": [
+            {
+              "step_id": "retrieve_battery",
+              "sequence": 8,
+              "instruction": "Récupérer la pile dans la Safe Box.",
+              "component_ref": "safe_box",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Pile récupérée de la zone de consignation."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "reinsert_battery",
+          "sequence": 9,
+          "title": "Réinsérer la pile dans l’emplacement fonctionnel de droite, sans X, en alignant ",
+          "steps": [
+            {
+              "step_id": "reinsert_battery",
+              "sequence": 9,
+              "instruction": "Réinsérer la pile dans l’emplacement fonctionnel de droite, sans X, en alignant le pôle positif sur le signe +.",
+              "component_ref": "battery_holder_right",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Emplacement et polarité confirmés visuellement ou par confirmation manuelle identifiée; objet détecté seul insuffisant."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "switch_on",
+          "sequence": 10,
+          "title": "Basculer l’interrupteur vers le haut, position ON, après fermeture du carter et ",
+          "steps": [
+            {
+              "step_id": "switch_on",
+              "sequence": 10,
+              "instruction": "Basculer l’interrupteur vers le haut, position ON, après fermeture du carter et réinsertion correcte de la pile.",
+              "component_ref": "main_switch",
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Position ON confirmée après sécurisation mécanique."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "functional_check",
+          "sequence": 11,
+          "title": "Contrôler le fonctionnement de l’ampoule et consigner le résultat.",
+          "steps": [
+            {
+              "step_id": "functional_check",
+              "sequence": 11,
+              "instruction": "Contrôler le fonctionnement de l’ampoule et consigner le résultat.",
+              "component_ref": null,
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Résultat du contrôle fonctionnel enregistré par l’opérateur."
+              }
+            }
+          ]
+        },
+        {
+          "stage_id": "sign_close",
+          "sequence": 12,
+          "title": "Présenter le récapitulatif, signer et clôturer l’intervention.",
+          "steps": [
+            {
+              "step_id": "sign_close",
+              "sequence": 12,
+              "instruction": "Présenter le récapitulatif, signer et clôturer l’intervention.",
+              "component_ref": null,
+              "validation": {
+                "method": "manual_confirmation",
+                "expected_state": "Signature non vide requise pour clôturer."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "anchors": {
+    "main_switch": {},
+    "battery_holder_right": {},
+    "safe_box": {},
+    "guard": {},
+    "bulb": {}
+  },
+  "machine_reference": {
+    "main_switch": {
+      "type": "rocker_switch",
+      "off_direction": "down",
+      "on_direction": "up"
+    },
+    "energy_source": "cylindrical_battery",
+    "functional_battery_slot": "right_slot_without_X",
+    "positive_contact": "marked_plus",
+    "lockout_point": "Safe Box with padlock pictogram",
+    "guard": {
+      "type": "sliding_transparent_guard",
+      "open_marker": "empty_circle",
+      "closed_marker": "solid_black_circle",
+      "moving_marker": "white_square",
+      "open_direction": null,
+      "closed_direction": null
+    },
+    "maintenance_target": {
+      "type": null,
+      "description": "bulb; incandescent in text, LED in image caption"
+    }
+  },
+  "clarifications_required": [
+    {
+      "id": "guard_direction",
+      "status": "unresolved",
+      "question": "Le manuel décrit une ouverture vers le haut et une fermeture vers le bas, mais les vues disponibles ne confirment pas clairement le sens. Fournir deux vues légendées « ouvert » et « fermé »."
+    },
+    {
+      "id": "bulb_type",
+      "status": "unresolved",
+      "question": "Le texte décrit une ampoule incandescente; la légende de l’image mentionne une ampoule LED. Confirmer le composant réel et sa compatibilité."
+    }
+  ],
+  "_generation_metadata": {
+    "generator_version": "sl-poc-reference-1",
+    "source_type": "manually_reviewed_reference_draft",
+    "overall_confidence": 0.7,
+    "generation_notes": [
+      "Séquence de référence transcrite depuis la description fournie.",
+      "États d’équipement non déduits de la seule détection de présence.",
+      "Brouillon bloqué jusqu’à résolution des contradictions documentaires."
+    ],
+    "validation_warnings": [
+      {
+        "code": "guard_direction",
+        "message": "Le manuel décrit une ouverture vers le haut et une fermeture vers le bas, mais les vues disponibles ne confirment pas clairement le sens. Fournir deux vues légendées « ouvert » et « fermé »."
+      },
+      {
+        "code": "bulb_type",
+        "message": "Le texte décrit une ampoule incandescente; la légende de l’image mentionne une ampoule LED. Confirmer le composant réel et sa compatibilité."
+      }
+    ]
+  }
+}

@@ -5,9 +5,23 @@ Contrats de données échangés avec le dashboard HSE (React/Vite).
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Literal, Optional, TypeVar
 from pydantic import BaseModel, Field
+from pydantic import ConfigDict
+
+T = TypeVar("T")
+
+class _UTCModel(BaseModel):
+    """Base model that serializes all datetime fields with explicit 'Z' UTC suffix."""
+    model_config = ConfigDict(json_encoders={
+        datetime: lambda dt: (
+            dt.strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+            if dt.tzinfo is None
+            else dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S") + "Z"
+        )
+    })
+
 
 T = TypeVar("T")
 
@@ -21,21 +35,26 @@ class PaginatedResponse(BaseModel, Generic[T]):
 
 # ── Procédures & Versions ─────────────────────────────────────────────────────
 
-class ApprovalRead(BaseModel):
+class ApprovalRead(_UTCModel):
     id: str
     version_id: str
     reviewer_id: str
     decision: str
     notes: Optional[str] = None
     created_at: datetime
+    approved_by: Optional[str] = None
+    decided_at: Optional[datetime] = None
+    is_superseded: bool = False
 
 
 class ApprovalCreatePayload(BaseModel):
+    version_id: Optional[str] = None
     decision: Literal["approved", "rejected"]
     notes: Optional[str] = None
+    approved_by: Optional[str] = None
 
 
-class ProcedureVersionRead(BaseModel):
+class ProcedureVersionRead(_UTCModel):
     id: str
     procedure_id: str
     version_number: int
@@ -44,6 +63,13 @@ class ProcedureVersionRead(BaseModel):
     created_by: str
     created_at: datetime
     approvals: List[ApprovalRead] = []
+    generation_source: str = "manual"
+    llm_model_used: Optional[str] = None
+    schema_version: str = "1.0"
+    validation_errors: Optional[List[str]] = None
+    submitted_for_review_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    latest_approval: Optional[ApprovalRead] = None
 
 
 class DraftUpdatePayload(BaseModel):
@@ -51,17 +77,34 @@ class DraftUpdatePayload(BaseModel):
     notes: Optional[str] = None
 
 
-class ProcedureListItem(BaseModel):
+class ResolveClarificationPayload(_UTCModel):
+    clarification_id: str
+    answer: str
+    rationale: Optional[str] = "Décision HSE validée"
+    step_id: Optional[str] = None
+
+
+class ProcedureListItem(_UTCModel):
     id: str
     machine_id: str
-    machine_name: str
-    status: str
-    version_number: int = 1
+    machine_name: str  # kept for backward compat
+    title: str
+    created_by: Optional[str] = None
+    status: str  # kept for backward compat
+    current_status: str
+    current_version_id: Optional[str] = None
+    current_version_number: int = 1
+    version_number: int = 1  # kept for backward compat
+    generation_source: str = "manual"
+    overall_confidence: Optional[float] = None
+    open_validation_errors: int = 0
+    has_published_version: bool = False
+    workflow_definition: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
 
 
-class ProcedureRead(BaseModel):
+class ProcedureRead(_UTCModel):
     id: str
     machine_id: str
     machine_name: str
@@ -70,51 +113,25 @@ class ProcedureRead(BaseModel):
     versions: List[ProcedureVersionRead] = []
     created_at: datetime
     updated_at: datetime
+    title: Optional[str] = None
+    created_by: Optional[str] = None
+    active_version: Optional[ProcedureVersionRead] = None
+    review_version: Optional[ProcedureVersionRead] = None
 
 
-class ProcedurePublishResponse(BaseModel):
+class ProcedurePublishResponse(_UTCModel):
     procedure_id: str
     published_version_id: str
     deprecated_version_id: Optional[str] = None
     published_at: datetime
+    published_by: Optional[str] = None
 
 
 # ── Génération LLM ────────────────────────────────────────────────────────────
 
-class GenerationRunRequest(BaseModel):
-    machine_id: str
-    machine_name: str
-    components: str
-    requested_by: str = "hse_user@smartloto.io"
-    source_type: Literal["text", "image"] = "text"
-    image_base64: Optional[str] = None
-    provider: Literal["openrouter", "mistral", "groq", "vllm", "stub"] = "stub"
-
-
-class ValidationIssueSummary(BaseModel):
-    code: str
-    message: str
-    severity: str
-    field_path: Optional[str] = None
-
-
-class GenerationRunResponse(BaseModel):
-    job_id: str
-    status: str
-    is_publishable: bool
-    workflow_definition: Dict[str, Any]
-    yolo_metadata: Dict[str, Any] = {}
-    validation_errors: List[ValidationIssueSummary] = []
-    validation_warnings: List[ValidationIssueSummary] = []
-    generation_notes: List[str] = []
-    llm_provider: Optional[str] = None
-    error_message: Optional[str] = None
-    procedure_id: Optional[str] = None
-
-
 # ── Interventions & Monitoring ────────────────────────────────────────────────
 
-class InterventionSummary(BaseModel):
+class InterventionSummary(_UTCModel):
     id: str
     machine_id: str
     procedure_version_id: Optional[str] = None
@@ -139,7 +156,7 @@ class PaginatedInterventions(BaseModel):
 
 # ── Audit ─────────────────────────────────────────────────────────────────────
 
-class AuditEventRead(BaseModel):
+class AuditEventRead(_UTCModel):
     id: str
     event_type: str
     actor_id: str
@@ -147,3 +164,4 @@ class AuditEventRead(BaseModel):
     procedure_id: Optional[str] = None
     payload: Dict[str, Any] = {}
     created_at: datetime
+    occurred_at: Optional[datetime] = None

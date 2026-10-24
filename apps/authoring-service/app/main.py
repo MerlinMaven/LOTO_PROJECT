@@ -19,8 +19,13 @@ from app.database import close_db, init_db
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Initialisation de la base de données
     await init_db()
+    # Démarrage du worker de traitement documentaire asynchrone
+    from app.services import document_generation_service
+    await document_generation_service.start_worker()
     yield
-    # Fermeture propre
+    # Arrêt propre du worker
+    await document_generation_service.stop_worker()
+    # Fermeture propre de la base de données
     await close_db()
 
 

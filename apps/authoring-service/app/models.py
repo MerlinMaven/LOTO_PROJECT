@@ -6,7 +6,7 @@ Schéma consolidé et simplifié pour le cycle de vie HSE et l'audit.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import (
@@ -14,9 +14,11 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -37,8 +39,8 @@ class Procedure(Base):
     created_by_hse: Mapped[str] = mapped_column(String(255), default="hse_supervisor@smartloto.io")
     status: Mapped[str] = mapped_column(String(50), default="APPROVED")
     workflow_stages: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     @property
     def id(self) -> str:
@@ -59,6 +61,41 @@ class Procedure(Base):
     versions: Mapped[List[ProcedureVersion]] = relationship("ProcedureVersion", back_populates="procedure", cascade="all, delete-orphan")
 
 
+class DocumentGenerationJob(Base):
+    """Durable PDF analysis task; the PDF itself remains in document storage."""
+    __tablename__ = "document_generation_jobs"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
+    owner_id: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    idempotency_key: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, unique=True)
+    document_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    document_path: Mapped[str] = mapped_column(String(1000), nullable=False)
+    source_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    stage: Mapped[str] = mapped_column(String(32), nullable=False, default="queued")
+    stage_history: Mapped[List[str]] = mapped_column(JSON, nullable=False, default=list)
+    timings_ms: Mapped[Dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    result: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    procedure_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    version_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
+
+    __table_args__ = (
+        Index("ix_generation_jobs_owner_updated", "owner_id", "updated_at"),
+        Index(
+            "uq_generation_jobs_active_digest", "owner_id", "source_sha256", unique=True,
+            sqlite_where=text("status IN ('queued', 'running')"),
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+    )
+
+
 class ProcedureVersion(Base):
     """Version immuable du contenu d'une procédure (workflow JSON et étapes)."""
     __tablename__ = "procedure_versions"
@@ -69,7 +106,7 @@ class ProcedureVersion(Base):
     status: Mapped[str] = mapped_column(String(50), default="draft_pending_review")
     workflow_definition: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
     created_by: Mapped[str] = mapped_column(String(255), default="system")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     procedure: Mapped[Procedure] = relationship("Procedure", back_populates="versions")
     approvals: Mapped[List[ProcedureApproval]] = relationship("ProcedureApproval", back_populates="version", cascade="all, delete-orphan")
@@ -85,7 +122,7 @@ class ProcedureApproval(Base):
     reviewer_id: Mapped[str] = mapped_column(String(255), nullable=False)
     decision: Mapped[str] = mapped_column(String(50), nullable=False)  # approved / rejected
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
     version: Mapped[ProcedureVersion] = relationship("ProcedureVersion", back_populates="approvals")
 
@@ -100,7 +137,7 @@ class AuditEvent(Base):
     machine_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     procedure_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     payload: Mapped[Dict[str, Any]] = mapped_column(JSON, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 
 class Intervention(Base):
@@ -109,11 +146,12 @@ class Intervention(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=generate_uuid)
     machine_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    procedure_version_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True)
     operator_name: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="IN_PROGRESS")
     current_stage_id: Mapped[int] = mapped_column(Integer, default=1)
     logs: Mapped[List[Dict[str, Any]]] = mapped_column(JSON, default=list)
     signature_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     pdf_report_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
-    started_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)

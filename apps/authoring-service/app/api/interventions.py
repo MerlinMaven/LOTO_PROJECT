@@ -25,7 +25,9 @@ async def list_interventions(
 ):
     stmt = select(Intervention)
     if status:
-        stmt = stmt.where(Intervention.status == status)
+        # Field Service stores lifecycle states in uppercase while the dashboard
+        # uses lowercase values. Compare case-insensitively so both contracts work.
+        stmt = stmt.where(func.upper(Intervention.status) == status.upper())
 
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_res = await db.execute(count_stmt)
@@ -39,8 +41,11 @@ async def list_interventions(
         InterventionSummary(
             id=item.id,
             machine_id=item.machine_id,
+            procedure_version_id=item.procedure_version_id,
             operator_name=item.operator_name,
-            status=item.status,
+            # Keep the API contract consumed by the dashboard lowercase even
+            # though Unity/Field Service persists uppercase values.
+            status=item.status.strip().lower(),
             current_step_ref=f"Étape {item.current_stage_id}",
             started_at=item.started_at,
             completed_at=item.completed_at,

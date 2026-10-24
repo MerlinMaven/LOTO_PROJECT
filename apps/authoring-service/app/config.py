@@ -1,16 +1,18 @@
 """
 SmartLOTO Authoring Service — Configuration.
 Gère les variables d'environnement, les clés API des modèles LLM et la connexion DB.
-Mode autonome SQLite activé par défaut pointant sur smartloto.db à la racine.
+Mode autonome SQLite activé par défaut pointant sur data/smartloto.db.
 """
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 # Chemins de base résolus de manière absolue
 APP_DIR = Path(__file__).resolve().parent
@@ -23,7 +25,12 @@ for candidate in [APP_DIR] + list(APP_DIR.parents):
         PROJECT_ROOT = candidate
         break
 
-DEFAULT_SQLITE_PATH = (PROJECT_ROOT / "smartloto.db").resolve()
+def _get_default_sqlite_path() -> Path:
+    data_dir = (PROJECT_ROOT / "data").resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return (data_dir / "smartloto.db").resolve()
+
+DEFAULT_SQLITE_PATH = _get_default_sqlite_path()
 
 def resolve_db_url() -> tuple[str, Path]:
     raw_env = os.getenv("DATABASE_URL", "").strip() or os.getenv("SQLITE_DB_PATH", "").strip()
@@ -58,6 +65,19 @@ MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-small-latest")
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+
+# The document-generation flow uses one server-selected multimodal model.
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+
+# PDF authoring defaults to Groq's multimodal Qwen model when configured.
+# Gemini remains available as an explicit server-side alternative.
+DOCUMENT_GENERATION_PROVIDER = os.getenv(
+    "DOCUMENT_GENERATION_PROVIDER", "groq" if GROQ_API_KEY else "gemini"
+).strip().lower()
+GROQ_DOCUMENT_MODEL = os.getenv("GROQ_DOCUMENT_MODEL", "qwen/qwen3.8-27b")
+PROVIDER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("PROVIDER_REQUEST_TIMEOUT_SECONDS", "150"))
+MAX_GENERATION_JOB_SECONDS = float(os.getenv("MAX_GENERATION_JOB_SECONDS", "480"))
 
 VLLM_BASE_URL = os.getenv("VLLM_BASE_URL", "")
 VLLM_MODEL = os.getenv("VLLM_MODEL", "mistralai/Mistral-7B-Instruct-v0.3")

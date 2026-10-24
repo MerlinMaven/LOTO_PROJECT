@@ -23,7 +23,12 @@ for candidate in [APP_DIR] + list(APP_DIR.parents):
         PROJECT_ROOT = candidate
         break
 
-DEFAULT_SQLITE_PATH = (PROJECT_ROOT / "smartloto.db").resolve()
+def _get_default_sqlite_path() -> Path:
+    data_dir = (PROJECT_ROOT / "data").resolve()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return (data_dir / "smartloto.db").resolve()
+
+DEFAULT_SQLITE_PATH = _get_default_sqlite_path()
 
 def resolve_sqlite_path() -> Path:
     raw_env = os.getenv("DATABASE_URL", "").strip() or os.getenv("SQLITE_DB_PATH", "").strip()
@@ -43,7 +48,8 @@ SQLITE_DB_PATH = resolve_sqlite_path()
 
 # Poids du modèle YOLO-World (absolu)
 DEFAULT_WEIGHTS_PATH = (SERVICE_DIR / "weights" / "yolov8s-worldv2.pt").resolve()
-WEIGHTS_PATH = os.getenv("YOLO_MODEL_PATH", str(DEFAULT_WEIGHTS_PATH))
+_weights_path = Path(os.getenv("YOLO_MODEL_PATH", str(DEFAULT_WEIGHTS_PATH)))
+WEIGHTS_PATH = str((_weights_path if _weights_path.is_absolute() else SERVICE_DIR / _weights_path).resolve())
 
 # Stockage local des artefacts (preuves photos, signatures, rapports PDF)
 DEFAULT_STORAGE_DIR = (SERVICE_DIR / "storage").resolve()

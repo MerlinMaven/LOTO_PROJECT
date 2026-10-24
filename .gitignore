@@ -65,8 +65,14 @@ ngrok*
 
 # ── Runtime-generated files ───────────────────────────────────────────────────
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
 *.sqlite
 *.sqlite3
+/data/
+apps/authoring-service/data/documents/*
+!apps/authoring-service/data/documents/.gitkeep
 apps/field-service/storage/evidence/*
 !apps/field-service/storage/evidence/.gitkeep
 apps/field-service/storage/reports/*
@@ -78,6 +84,27 @@ apps/hse-dashboard/vite.config.d.ts
 scratch_report_*.pdf
 sig_temp_*.png
 diagnostics_report.txt
+
+# Temporary PDF analysis artifacts (keep reference PDFs and contracts versioned).
+pdf_analysis/
+pdf-analysis/
+pdf_extract_*/
+tmp_pdf_*/
+tmp_pdf_*
+pdf_analysis_*
+pdf_extract_*.txt
+pdf_extract_*.json
+*.pdf.tmp
+*.pdf.txt
+
+# Unity generated directories (source files and StreamingAssets stay versioned).
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+[Uu]ser[Ss]ettings/
 
 # ── Test / coverage ───────────────────────────────────────────────────────────
 .pytest_cache/

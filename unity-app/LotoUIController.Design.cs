@@ -79,8 +79,9 @@ public partial class LotoUIController
 
         qrScanPanel = Panel("Scan QR", false);
         qrCameraPreviewImage = Preview(qrScanPanel.transform, "QR camera", .02f, .16f, .98f, .87f);
-        var target = Box("Scan target", qrScanPanel.transform, new Color(0,0,0,0), .32f, .30f, .68f, .74f);
-        Outline(target.gameObject, accent, new Vector2(3, 3));
+        var target = Box("Scan target", qrScanPanel.transform, Color.clear, .32f, .30f, .68f, .74f);
+        target.GetComponent<Image>().enabled = false;
+        AddReticleCorners(target, "QR reticle");
         Label(qrScanPanel.transform, "Placez le QR code dans le cadre", 25, Color.white, .2f, .18f, .8f, .28f, TextAnchor.MiddleCenter);
         scanLaserLine = Box("Scan line", target, accent, 0, .49f, 1, .51f);
         laserMinY = -70; laserMaxY = 70; laserSpeed = 90;
@@ -90,8 +91,9 @@ public partial class LotoUIController
         cameraPreviewImage = Preview(stepPanel.transform, "Operator camera", .02f, .16f, .635f, .87f);
         Label(cameraPreviewImage.transform, "VUE OPÉRATEUR", 19, muted, .03f, .89f, .8f, .98f);
         var reticle = Box("Framing aid - not object tracking", cameraPreviewImage.transform,
-            new Color(0,0,0,0), .27f, .25f, .73f, .75f);
-        Outline(reticle.gameObject, accent, new Vector2(2, 2));
+            Color.clear, .27f, .25f, .73f, .75f);
+        reticle.GetComponent<Image>().enabled = false;
+        AddReticleCorners(reticle, "Action reticle");
         var guide = Box("Action card", stepPanel.transform, ink, .65f, .16f, .98f, .87f);
         phaseTitleText = Label(guide, "CONSIGNATION", 18, accent, .07f, .87f, .93f, .97f);
         stageTitleText = Label(guide, "Étape", 26, Color.white, .07f, .70f, .93f, .86f);
@@ -99,22 +101,58 @@ public partial class LotoUIController
         visionPromptText = Label(guide, "Contrôle visuel", 18, muted, .07f, .34f, .93f, .47f);
         validateButton = Action(guide, "Capturer et vérifier", .07f, .22f, .93f, .32f, true);
         overrideReasonInput = Reason(guide);
-        overrideButton = Action(guide, "Soumettre une dérogation", .07f, .015f, .93f, .105f);
+        overrideButton = Action(guide, "Valider manuellement", .07f, .015f, .93f, .105f);
 
         maintenancePanel = Panel("Maintenance", true);
-        var work = Box("Maintenance card", maintenancePanel.transform, ink, .24f, .21f, .76f, .78f);
-        Label(work, "02 / MAINTENANCE", 19, accent, .065f, .79f, .935f, .91f);
-        Label(work, "Consignation validée", 34, Color.white, .065f, .59f, .935f, .78f);
-        Label(work, "Réalisez la maintenance selon la procédure approuvée.\n\nÀ la fin des travaux, lancez la déconsignation.", 24, muted, .065f, .29f, .935f, .58f);
-        startRestorationButton = Action(work, "Commencer la déconsignation", .065f, .08f, .935f, .23f, true);
+        Label(maintenancePanel.transform, "02 / MAINTENANCE GUIDÉE", 20, accent, .04f, .88f, .64f, .96f);
+        maintenancePreviewImage = Preview(maintenancePanel.transform, "Maintenance camera", .04f, .17f, .64f, .85f);
+        maintenancePreviewImage.raycastTarget = true;
+        maintenanceArrowLine = Box("Maintenance arrow shaft", maintenancePreviewImage.transform,
+            accent, 0, 0, 1, 1).GetComponent<RectTransform>();
+        maintenanceArrowHead = Label(maintenancePreviewImage.transform, "▶", 38, accent,
+            .45f, .45f, .55f, .55f, TextAnchor.MiddleCenter);
+        maintenanceArrowLine.gameObject.SetActive(false);
+        maintenanceArrowHead.gameObject.SetActive(false);
+        Label(maintenancePanel.transform, "VUE DE LA MAQUETTE · CLIQUEZ SUR LA ZONE À INTERVENIR", 16, muted,
+            .04f, .10f, .64f, .16f, TextAnchor.MiddleCenter);
+
+        var work = Box("Maintenance card", maintenancePanel.transform, ink, .67f, .17f, .96f, .85f);
+        Label(work, "CONSIGNE", 17, accent, .07f, .87f, .93f, .97f);
+        maintenanceTaskTitleText = Label(work, "Remplacer l'ampoule", 29, Color.white,
+            .07f, .69f, .93f, .86f);
+        maintenanceCalibrationText = Label(work,
+            "Cliquez sur l'ampoule dans l'image pour calibrer le repère de cette maquette.",
+            20, muted, .07f, .40f, .93f, .68f);
+        Label(work, "La calibration est enregistrée sur ce PC pour cette machine.",
+            16, muted, .07f, .30f, .93f, .40f);
+        startRestorationButton = Action(work, "Commencer la déconsignation", .07f, .07f, .93f, .22f, true);
 
         signaturePanel = Panel("Signature", true);
-        var sign = Box("Signature card", signaturePanel.transform, ink, .24f, .21f, .76f, .78f);
-        Label(sign, "04 / CLÔTURE", 19, accent, .065f, .79f, .935f, .91f);
-        Label(sign, "Signature de démonstration", 32, Color.white, .065f, .62f, .935f, .78f);
-        Label(sign, "La signature est simulée dans le code existant.\nElle ne constitue pas une signature opérateur réelle.", 23, muted, .065f, .38f, .935f, .61f);
-        signatureCanvas = Preview(sign, "Signature area", .065f, .23f, .935f, .35f);
-        submitSignatureButton = Action(sign, "Clôturer l'intervention", .065f, .06f, .935f, .19f, true);
+        var sign = Box("Signature card", signaturePanel.transform, ink, .24f, .16f, .76f, .84f);
+        Label(sign, "04 / CLÔTURE", 19, accent, .065f, .87f, .935f, .97f);
+        closureSummaryText = Label(sign, "Consignation et déconsignation terminées.",
+            19, muted, .065f, .76f, .935f, .86f);
+        Label(sign, "Dessinez votre signature dans le cadre.", 21, Color.white,
+            .065f, .66f, .935f, .75f);
+        signatureCanvas = Preview(sign, "Signature area", .065f, .31f, .935f, .64f);
+        signatureCanvas.raycastTarget = true;
+        clearSignatureButton = Action(sign, "Effacer", .065f, .17f, .32f, .27f);
+        submitSignatureButton = Action(sign, "Signer et clôturer", .36f, .17f, .935f, .27f, true);
+        Label(sign, "Le PDF sera généré après confirmation de la signature.",
+            16, muted, .065f, .06f, .935f, .15f);
+
+        overrideConfirmationPanel = Box("Confirm manual override", safeRoot,
+            new Color(0, 0, 0, .82f), 0, 0, 1, 1).gameObject;
+        overrideConfirmationPanel.GetComponent<Image>().raycastTarget = true;
+        var confirmation = Box("Manual override confirmation card", overrideConfirmationPanel.transform,
+            ink, .26f, .34f, .74f, .68f);
+        Label(confirmation, "CONFIRMER LA VALIDATION MANUELLE", 19, accent,
+            .07f, .79f, .93f, .95f, TextAnchor.MiddleCenter);
+        overrideConfirmationText = Label(confirmation, "", 21, Color.white,
+            .08f, .35f, .92f, .77f, TextAnchor.MiddleCenter);
+        overrideCancelButton = Action(confirmation, "Retour", .07f, .08f, .43f, .26f);
+        overrideConfirmButton = Action(confirmation, "Confirmer", .57f, .08f, .93f, .26f, true);
+        overrideConfirmationPanel.SetActive(false);
 
         reportPanel = Panel("Rapport", true);
         var report = Box("Report card", reportPanel.transform, ink, .24f, .21f, .76f, .78f);
@@ -203,13 +241,23 @@ public partial class LotoUIController
     {
         var rect = Node(name, parent); Fit(rect, x0,y0,x1,y1);
         var image = rect.gameObject.AddComponent<RawImage>();
-        image.color = Color.clear; image.raycastTarget = false;
+        // RawImage multiplies the camera pixels by this color. Alpha zero made
+        // the preview fully transparent even after assigning a live texture.
+        image.color = Color.white; image.raycastTarget = false;
         return image;
     }
-    private void Outline(GameObject target, Color color, Vector2 distance)
+    private void AddReticleCorners(Transform parent, string prefix)
     {
-        var outline = target.AddComponent<UnityEngine.UI.Outline>();
-        outline.effectColor = color; outline.effectDistance = distance; outline.useGraphicAlpha = false;
+        const float cornerLength = .16f;
+        const float cornerThickness = .025f;
+        Box(prefix + " top left horizontal", parent, accent, 0, 1-cornerThickness, cornerLength, 1);
+        Box(prefix + " top left vertical", parent, accent, 0, 1-cornerLength, cornerThickness, 1);
+        Box(prefix + " top right horizontal", parent, accent, 1-cornerLength, 1-cornerThickness, 1, 1);
+        Box(prefix + " top right vertical", parent, accent, 1-cornerThickness, 1-cornerLength, 1, 1);
+        Box(prefix + " bottom left horizontal", parent, accent, 0, 0, cornerLength, cornerThickness);
+        Box(prefix + " bottom left vertical", parent, accent, 0, 0, cornerThickness, cornerLength);
+        Box(prefix + " bottom right horizontal", parent, accent, 1-cornerLength, 0, 1, cornerThickness);
+        Box(prefix + " bottom right vertical", parent, accent, 1-cornerThickness, 0, 1, cornerLength);
     }
     private Sprite RoundedSurface()
     {

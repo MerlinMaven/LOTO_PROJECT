@@ -32,6 +32,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { env } from "@/config/env";
+import { phaseLabel, PHASE_LABELS, moveStepToPhase } from "@/lib/workflow";
 
 const VALIDATION_METHODS = [
   { value: "visual_observation", label: "Observation visuelle (caméra / repère)" },
@@ -62,6 +63,7 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
 
   const { procedureId } = useParams<{ procedureId: string }>();
   const resolveMutation = useResolveClarification(procedureId ?? "");
+  const [resolutionError, setResolutionError] = useState("");
   const [resolvingId, setResolvingId] = useState<string | null>(null);
 
   // États locaux de déploiement d'accordéons
@@ -109,101 +111,24 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
   };
 
   // Application complète d'une clarification : synchronise l'étape + le backend
-  const handleApplyClarification = async (questionId: string, stepId?: string) => {
+  const handleApplyClarification = async (questionId: string) => {
     const q = allClarifications.find((item) => String(item.id) === questionId);
-    if (!q) return;
-    const res = (q.resolution && typeof q.resolution === "object" ? q.resolution : {}) as Record<string, unknown>;
+    if (!q || !procedureId) return;
+    const res = (q.resolution ?? {}) as Record<string, unknown>;
     const answer = String(res.answer || "").trim();
     if (!answer) return;
-    const rationale = String(res.rationale || "Décision HSE validée").trim();
-
-    setResolvingId(questionId);
+    setResolvingId(questionId); setResolutionError("");
     try {
-      // 1. Mise à jour immédiate du draft local
-      const questions = Array.isArray(draft.clarifications_required)
-        ? (draft.clarifications_required as Record<string, unknown>[])
-        : [];
-      const updatedQuestions = questions.map((item) =>
-        String(item.id) === questionId
-          ? {
-              ...item,
-              status: "resolved",
-              resolution: {
-                ...res,
-                answer,
-                rationale,
-                resolved_at: new Date().toISOString(),
-              },
-              affected_steps_reviewed: true,
-            }
-          : item
-      );
-
-      // 2. Si une étape est concernée, adapter critères et instruction
-      let updatedPhases = draft.phases;
-      if (stepId && draft.phases) {
-        updatedPhases = draft.phases.map((ph) => ({
-          ...ph,
-          stages: ph.stages.map((st) => ({
-            ...st,
-            steps: st.steps.map((stStep) => {
-              if (stStep.step_id !== stepId) return stStep;
-              const currentCrit = stStep.verification?.criteria ?? [];
-              const hasPlaceholder = currentCrit.some(
-                (c) => c.toLowerCase().includes("à définir") || c.toLowerCase().includes("inférieure au seuil")
-              );
-              const newCrit = hasPlaceholder
-                ? currentCrit.map((c) =>
-                    c.toLowerCase().includes("à définir") || c.toLowerCase().includes("inférieure au seuil")
-                      ? answer
-                      : c
-                  )
-                : [...currentCrit, `Critère validé : ${answer}`];
-
-              let newInst = stStep.instruction;
-              if (newInst.toLowerCase().includes("à définir")) {
-                newInst = newInst.replace(/\(à définir[^)]*\)/gi, answer).replace(/à définir/gi, answer);
-              }
-
-              return {
-                ...stStep,
-                instruction: newInst,
-                verification: {
-                  ...(stStep.verification ?? { method: "not_defined" }),
-                  criteria: newCrit,
-                },
-              };
-            }),
-          })),
-        }));
-      }
-
-      // 3. Filtrer les diagnostics liés à cette clarification
-      const updatedDiags = (draft.validation_diagnostics ?? []).filter(
-        (d) => String(d.entity_id) !== questionId && !String(d.message || "").includes(questionId)
-      );
-
-      setDraft({
-        ...draft,
-        clarifications_required: updatedQuestions,
-        phases: updatedPhases,
-        validation_diagnostics: updatedDiags,
+      const version = await resolveMutation.mutateAsync({
+        clarification_id: questionId, answer, rationale: String(res.rationale || ""),
+        answer_complete: res.answer_complete === true,
+        affected_steps_reviewed: q.affected_steps_reviewed === true,
       });
-
-      // 4. Appel backend pour persistance
-      if (procedureId) {
-        await resolveMutation.mutateAsync({
-          clarification_id: questionId,
-          answer,
-          rationale,
-          step_id: stepId,
-        });
-      }
-    } catch (err) {
-      console.warn("Backend resolveClarification sync warning:", err);
-    } finally {
-      setResolvingId(null);
-    }
+      setDraft({ ...draft, clarifications_required: version.workflow_definition.clarifications_required,
+        validation_diagnostics: version.workflow_definition.validation_diagnostics });
+    } catch {
+      setResolutionError("Enregistrement impossible. La question reste ouverte ; reessayez.");
+    } finally { setResolvingId(null); }
   };
 
   // Documents sources pour affichage de références PDF
@@ -278,6 +203,7 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
 
   return (
     <div className="space-y-6">
+      {resolutionError && <p role="alert" className="text-red-700">{resolutionError}</p>}
       {/* ── 1. Cadrage synthétique de l'intervention (2 Cartes Bento côte à côte) ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="bg-white rounded-[20px] p-5 shadow-[0_4px_20px_-4px_rgba(15,23,42,0.04)] border border-slate-200/60">
@@ -358,9 +284,9 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                           value={String(resolution.answer || "")}
                           onChange={(e) =>
                             updateClarification(qId, {
-                              resolution: { ...resolution, answer: e.target.value },
-                              status: e.target.value.trim() ? "resolved" : "unresolved",
-                              affected_steps_reviewed: true,
+                              resolution: { ...resolution, answer: e.target.value, answer_complete: false },
+                              status: "unresolved",
+                              affected_steps_reviewed: false,
                             })
                           }
                         />
@@ -376,6 +302,11 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                           }
                         />
                       </div>
+                        <label className="block"><input type="checkbox" checked={resolution.answer_complete === true}
+                          onChange={e => updateClarification(qId, { status: "unresolved", resolution: { ...resolution, answer_complete: e.target.checked } })} /> Reponse complete et justifiee pour tous les points de cette question.</label>
+                        <label className="block"><input type="checkbox" checked={q.affected_steps_reviewed === true}
+                          onChange={e => updateClarification(qId, { status: "unresolved", affected_steps_reviewed: e.target.checked })} /> Criteres observables des etapes concernees revus separement.</label>
+                        <p>Une reponse partielle est conservee sans lever le blocage. Aucun critere n'est recopie automatiquement.</p>
                         <div className="flex items-center justify-between pt-1">
                           <Button
                             size="sm"
@@ -383,7 +314,7 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                             disabled={!String(resolution.answer || "").trim() || resolvingId === qId}
                             onClick={() => handleApplyClarification(qId)}
                           >
-                            {resolvingId === qId ? "Application..." : "Appliquer la décision"}
+                            {resolvingId === qId ? "Enregistrement..." : "Enregistrer la réponse"}
                           </Button>
                           {isResolved && (
                             <span className="text-emerald-700 font-semibold text-[11px] flex items-center gap-1">
@@ -421,7 +352,7 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
             <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
               <div className="flex items-center gap-2.5">
                 <span className="inline-flex items-center rounded-lg bg-blue-50 text-blue-700 border border-blue-200/60 text-xs font-bold uppercase tracking-wider px-3 py-1">
-                  {String(phase.phase_type)}
+                  {phase.sequence}. {phaseLabel(String(phase.phase_type))}
                 </span>
                 <h3 className="text-base font-bold text-slate-900">
                   {phase.title}
@@ -671,15 +602,20 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                             />
 
                             <div className="grid gap-3 sm:grid-cols-2">
+                              <SelectField label="Phase de l’action" value={String(step.execution_phase || phase.phase_type)}
+                                options={[...Object.entries(PHASE_LABELS).map(([value,label]) => ({value,label})),
+                                  ...(!PHASE_LABELS[phase.phase_type] ? [{value: phase.phase_type, label: phaseLabel(phase.phase_type)}] : [])]}
+                                readOnly={readOnly} onCommit={kind => setDraft(moveStepToPhase(draft, step.step_id, kind))} />
                               <SelectField
-                                label="Méthode de vérification"
+                                label="Méthode de validation"
                                 value={
                                   step.verification?.method ??
                                   step.validation?.method ??
                                   "not_defined"
                                 }
                                 original={o?.verification?.method ?? o?.validation?.method}
-                                options={VALIDATION_METHODS}
+                                options={(step.execution_phase || phase.phase_type).toLowerCase() === "maintenance"
+                                  ? VALIDATION_METHODS.filter(m => m.value === "human_confirmation") : VALIDATION_METHODS}
                                 readOnly={readOnly}
                                 onCommit={(method) =>
                                   patchStep(
@@ -696,7 +632,7 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                                 }
                               />
                               <TextField
-                                label="Critères observables (un par ligne)"
+                                label={step.verification?.method === "human_confirmation" ? "Critères de réalisation (facultatifs, sans contrôle caméra)" : "Critères observables (un par ligne)"}
                                 multiline
                                 rows={Math.max(2, (step.verification?.criteria ?? []).length || 1)}
                                 value={(
@@ -731,6 +667,9 @@ export function WorkflowReviewPanel({ readOnly }: { readOnly: boolean }) {
                                 }
                               />
                             </div>
+                            {step.verification?.method === "human_confirmation" && <p className="text-sm text-blue-800">
+                              Confirmation humaine normale : aucune photo, IA ou dérogation requise. Le guidage reste indépendant de cette validation.
+                            </p>}
 
                             {/* ── 4. Zone contextuelle des problèmes locaux (au clic) ─── */}
                             {hasIssues && isIssuesOpen && (

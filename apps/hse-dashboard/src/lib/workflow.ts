@@ -18,6 +18,44 @@ export function deepClone<T>(value: T): T {
   return structuredClone(value);
 }
 
+export const PHASE_LABELS: Record<string, string> = {
+  preparation: "Préparation", consignation: "Consignation", maintenance: "Maintenance",
+  restoration: "Déconsignation / remise en service",
+};
+export function phaseLabel(type: string): string {
+  const key = type.toLowerCase();
+  const aliases: Record<string, string> = { lockout: "consignation", isolation: "consignation",
+    "accès": "maintenance", acces: "maintenance", intervention: "maintenance", deconsignation: "restoration" };
+  return PHASE_LABELS[aliases[key] ?? key] ?? type;
+}
+
+/** Explicit HSE edit: preserve verification/guidance separately and never change the loaded original. */
+export function moveStepToPhase(wf: WorkflowDefinition, stepId: string, target: string): WorkflowDefinition {
+  const next = deepClone(wf);
+  let moved: WorkflowStep | undefined;
+  for (const phase of next.phases ?? []) for (const stage of phase.stages ?? []) {
+    const index = stage.steps.findIndex(s => s.step_id === stepId);
+    if (index >= 0) moved = stage.steps.splice(index, 1)[0];
+  }
+  if (!moved) return wf;
+  moved.execution_phase = target;
+  moved.guidance ??= { component_refs: moved.component_refs ?? [], observable_cues: moved.verification?.criteria ?? [] };
+  if (target === "maintenance") moved.verification = { ...moved.verification,
+    method: "human_confirmation", required_evidence: ["Attestation de l'opérateur"] };
+  let phase = next.phases?.find(p => p.phase_type === target);
+  if (!phase) {
+    phase = { phase_id: `review-${target}`, phase_type: target, title: phaseLabel(target), sequence: 1, stages: [] };
+    next.phases = [...(next.phases ?? []), phase];
+  }
+  if (!phase.stages.length) phase.stages.push({ stage_id: `${phase.phase_id}-actions`, title: phaseLabel(target), sequence: 1, steps: [] });
+  phase.stages[0].steps.push(moved);
+  next.phases = (next.phases ?? []).filter(p => p.stages.some(s => s.steps.length));
+  const order = Object.keys(PHASE_LABELS);
+  next.phases.sort((a,b) => (order.indexOf(a.phase_type)+1 || 99) - (order.indexOf(b.phase_type)+1 || 99));
+  next.phases.forEach((p,i) => { p.sequence=i+1; p.stages.forEach(s => s.steps.forEach((a,j) => a.sequence=j+1)); });
+  return next;
+}
+
 export function getMetadata(wf: WorkflowDefinition): GenerationMetadata {
   return wf._generation_metadata ?? {};
 }

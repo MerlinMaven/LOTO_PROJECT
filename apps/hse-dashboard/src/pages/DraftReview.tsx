@@ -18,7 +18,7 @@ import { AuditHistoryPanel } from "@/components/review/AuditHistoryPanel";
 import { ApprovalWorkflow } from "@/components/review/ApprovalWorkflow";
 import { SOURCE_LABELS, isEditable } from "@/lib/status";
 import { formatDate } from "@/lib/format";
-import { getBusinessBlockingCount } from "@/lib/kpi";
+import { getBusinessBlockingCount, isClarificationResolved } from "@/lib/kpi";
 import type { ApiError } from "@/types/api";
 import {
   ArrowLeft,
@@ -120,7 +120,6 @@ export function DraftReview() {
   const commitSaved = useReviewStore((s) => s.commitSaved);
   const isDirty     = useReviewStore((s) => s.isDirty);
   const draft       = useReviewStore((s) => s.draft);
-  const setDraft    = useReviewStore((s) => s.setDraft);
 
   const version  = procedure?.review_version ?? procedure?.active_version ?? null;
   const editable = version ? isEditable(version.status) : false;
@@ -169,141 +168,40 @@ export function DraftReview() {
 
   // Résolution centralisée et directe des points bloquants (Zéro répétition)
   const handleResolveClarificationCentral = async (questionId: string) => {
-    const answer = (resolvingAnswers[questionId] || "").trim();
-    const rationale = (resolvingRationales[questionId] || "").trim();
-    if (!answer || !draft) return;
+    const question = draft?.clarifications_required?.find((item) => String(item.id) === questionId);
+    const resolution = (question?.resolution ?? {}) as Record<string, unknown>;
+    const answer = (resolvingAnswers[questionId] ?? String(resolution.answer ?? "")).trim();
+    const rationale = (resolvingRationales[questionId] ?? String(resolution.rationale ?? "")).trim();
+    if (!answer || !rationale || !draft) {
+      setSaveError("La d\u00e9cision et sa justification sont requises pour confirmer la r\u00e9solution HSE.");
+      return;
+    }
+    setSaveError(null);
 
+    setResolvingAnswers((prev) => ({ ...prev, [questionId]: answer }));
     setSubmittingClarifId(questionId);
     try {
-      // 1. Mettre à jour les clarifications_required dans le store
-      const updatedQuestions = (draft.clarifications_required ?? []).map((item) => {
-        if (String(item.id) !== questionId) return item;
-        return {
-          ...item,
-          status: "resolved",
-          resolution: {
-            answer,
-            rationale,
-            resolved_at: new Date().toISOString(),
-          },
-          affected_steps_reviewed: true,
-        };
+      // Save pending component/citation edits before resolving on the server.
+      if (useReviewStore.getState().isDirty()) {
+        const saved = await updateDraft.mutateAsync({ workflow_definition: draft, edited_by: reviewerId });
+        commitSaved(saved);
+      }
+      const saved = await resolveMutation.mutateAsync({
+        clarification_id: questionId,
+        answer,
+        rationale,
+        answer_complete: true,
+        affected_steps_reviewed: true,
       });
-
-      // Trouver les composants et étapes concernés
-      const targetQ = (draft.clarifications_required ?? []).find(
-        (item) => String(item.id) === questionId
-      );
-      const relatedComps = Array.isArray(targetQ?.related_component_ids)
-        ? (targetQ.related_component_ids as string[])
-        : [];
-      const affectedSteps = Array.isArray(targetQ?.affected_step_ids)
-        ? (targetQ.affected_step_ids as string[])
-        : [];
-
-      // 2. Mettre à jour toutes les étapes concernées dans le workflow
-      let updatedPhases = draft.phases;
-      if (draft.phases) {
-        updatedPhases = draft.phases.map((ph) => ({
-          ...ph,
-          stages: ph.stages.map((st) => ({
-            ...st,
-            steps: st.steps.map((stStep) => {
-              const stepComps = (stStep.component_refs ?? []) as string[];
-              const isAffected =
-                affectedSteps.includes(stStep.step_id) ||
-                (stepComps.length > 0 &&
-                  relatedComps.length > 0 &&
-                  stepComps.some((c) => relatedComps.includes(c)));
-
-              if (!isAffected) return stStep;
-
-              const currentCrit = stStep.verification?.criteria ?? [];
-              const hasPlaceholder = currentCrit.some(
-                (c) =>
-                  c.toLowerCase().includes("à définir") ||
-                  c.toLowerCase().includes("inférieure au seuil")
-              );
-              const newCrit = hasPlaceholder
-                ? currentCrit.map((c) =>
-                    c.toLowerCase().includes("à définir") ||
-                    c.toLowerCase().includes("inférieure au seuil")
-                      ? answer
-                      : c
-                  )
-                : [...currentCrit, `Critère validé : ${answer}`];
-
-              let newInst = stStep.instruction;
-              if (newInst.toLowerCase().includes("à définir")) {
-                newInst = newInst
-                  .replace(/\(à définir[^)]*\)/gi, answer)
-                  .replace(/à définir/gi, answer);
-              }
-
-              return {
-                ...stStep,
-                instruction: newInst,
-                verification: {
-                  ...(stStep.verification ?? { method: "not_defined" }),
-                  criteria: newCrit,
-                },
-              };
-            }),
-          })),
-        }));
-      }
-
-      // 3. Mettre à jour les composants dans draft (retirer le besoin de clarification si toutes ses questions sont levées)
-      let updatedComponents = draft.components;
-      if (Array.isArray(draft.components)) {
-        updatedComponents = draft.components.map((comp) => {
-          const compId = String(comp.component_id || (comp as Record<string, unknown>).id || "");
-          if (compId && relatedComps.includes(compId)) {
-            const hasOtherPending = updatedQuestions.some(
-              (q) =>
-                q.status !== "resolved" &&
-                Array.isArray(q.related_component_ids) &&
-                (q.related_component_ids as string[]).includes(compId)
-            );
-            if (!hasOtherPending) {
-              return { ...comp, clarification_needed: false };
-            }
-          }
-          return comp;
-        });
-      }
-
-      // 4. Filtrer les diagnostics liés à cette clarification
-      const updatedDiags = (draft.validation_diagnostics ?? []).filter(
-        (d) =>
-          String(d.entity_id) !== questionId &&
-          !String(d.message || "").includes(questionId)
-      );
-
-      // 5. Mettre à jour l'état local du draft immédiatement
-      setDraft({
-        ...draft,
-        clarifications_required: updatedQuestions,
-        phases: updatedPhases,
-        components: updatedComponents,
-        validation_diagnostics: updatedDiags,
-      });
-
-      // 6. Appel persistance backend
-      if (procedureId) {
-        await resolveMutation.mutateAsync({
-          clarification_id: questionId,
-          answer,
-          rationale,
-        });
-      }
+      commitSaved(saved);
+      const updatedQuestions = saved.workflow_definition.clarifications_required ?? [];
 
       setEditingClarifId(null);
-      if (updatedQuestions.every((q) => q.status === "resolved")) {
+      if (updatedQuestions.every(isClarificationResolved)) {
         setBlockingSummaryOpen(false);
       }
     } catch (err) {
-      console.warn("Backend resolveClarification sync warning:", err);
+      setSaveError((err as ApiError).message ?? "La r\u00e9solution n\u2019a pas pu \u00eatre enregistr\u00e9e.");
     } finally {
       setSubmittingClarifId(null);
     }
@@ -330,7 +228,7 @@ export function DraftReview() {
     : [];
 
   const unresolvedClarificationsCount = useMemo(() => {
-    return openQuestions.filter((q) => q.status !== "resolved").length;
+    return openQuestions.filter((q) => !isClarificationResolved(q)).length;
   }, [openQuestions]);
 
   const totalBlockingCount = useMemo(() => {
@@ -646,7 +544,7 @@ export function DraftReview() {
                 const res = (q.resolution && typeof q.resolution === "object"
                   ? q.resolution
                   : {}) as Record<string, unknown>;
-                const isResolved = q.status === "resolved";
+                const isResolved = isClarificationResolved(q);
                 const isEditing = editingClarifId === qId;
                 const currentAnswer = resolvingAnswers[qId] ?? String(res.answer || "");
                 const currentRationale = resolvingRationales[qId] ?? String(res.rationale || "");
@@ -762,7 +660,7 @@ export function DraftReview() {
                           <input
                             type="text"
                             className="w-full rounded border border-slate-300 px-2.5 py-1.5 text-xs text-slate-900 placeholder-slate-400 focus:border-rose-500 focus:ring-1 focus:ring-rose-500"
-                            placeholder="Justification technique HSE (optionnelle)..."
+                            placeholder="Justification technique HSE (requise)..."
                             value={currentRationale}
                             onChange={(e) =>
                               setResolvingRationales((prev) => ({ ...prev, [qId]: e.target.value }))
@@ -784,7 +682,7 @@ export function DraftReview() {
                           <Button
                             size="sm"
                             variant="primary"
-                            disabled={!currentAnswer.trim() || submittingClarifId === qId}
+                            disabled={!currentAnswer.trim() || !currentRationale.trim() || submittingClarifId !== null}
                             onClick={() => handleResolveClarificationCentral(qId)}
                           >
                             {submittingClarifId === qId ? "Application en cours..." : "Appliquer globalement"}

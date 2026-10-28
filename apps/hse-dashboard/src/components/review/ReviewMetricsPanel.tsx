@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { clsx } from "clsx";
 import { ConfidenceBar } from "@/components/ui/ConfidenceBar";
 import { useReviewStore } from "@/store/reviewStore";
-import { calculateConfidenceBreakdown } from "@/lib/kpi";
+import { calculateConfidenceBreakdown, isClarificationResolved } from "@/lib/kpi";
 import { flattenSteps } from "@/lib/workflow";
 import type { ProcedureVersionRead } from "@/types/procedure";
 import type { WorkflowDefinition } from "@/types/workflow";
@@ -31,7 +31,7 @@ function CompletionRing({ value }: { value: number }) {
         : "stroke-rose-500";
   return (
     <div className="flex flex-col items-center gap-1">
-      <svg width={72} height={72} viewBox="0 0 72 72" aria-label={`${pct}% revue complétée`}>
+      <svg width={72} height={72} viewBox="0 0 72 72" aria-label={`${pct}% de confiance`}>
         <circle
           cx="36"
           cy="36"
@@ -63,7 +63,7 @@ function CompletionRing({ value }: { value: number }) {
           {pct}%
         </text>
       </svg>
-      <span className="text-xs font-medium text-slate-500">Revue complétée</span>
+      <span className="text-xs font-medium text-slate-500">Confiance globale</span>
     </div>
   );
 }
@@ -83,51 +83,32 @@ export function ReviewMetricsPanel({ version: _version }: ReviewMetricsPanelProp
     const components = Array.isArray(wf.components)
       ? (wf.components as Record<string, unknown>[])
       : [];
-    const componentCount = components.length || 7;
+    const componentCount = components.length;
 
     // 2. Étapes générées
     const flatSteps = flattenSteps(draft as unknown as WorkflowDefinition);
-    const stepCount = flatSteps.length || 8;
+    const stepCount = flatSteps.length;
 
     // 3. Points à clarifier
     const clarifs = Array.isArray(wf.clarifications_required)
       ? (wf.clarifications_required as Record<string, unknown>[])
       : [];
-    const openClarifications = clarifs.filter((q) => q.status !== "resolved");
+    const openClarifications = clarifs.filter((q) => !isClarificationResolved(q));
     const openClarificationsCount = openClarifications.length;
 
     // 4. Ancres AR (Signatures physiques et classes de vision)
     const comps = Array.isArray(wf.components) ? (wf.components as Record<string, unknown>[]) : [];
     let physicalSignaturesCount = 0;
     comps.forEach((c) => {
-      const inv = Array.isArray(c.invariant_features) ? c.invariant_features : [];
+      const inv = Array.isArray(c.invariant_features) && c.invariant_features.length > 0
+        ? c.invariant_features : Array.isArray(c.physical_signatures) ? c.physical_signatures : [];
       physicalSignaturesCount += inv.length;
     });
-    const visionAnchorsCount = physicalSignaturesCount > 0 ? physicalSignaturesCount : 8;
+    const visionAnchorsCount = physicalSignaturesCount + (Array.isArray(wf.visual_observations) ? wf.visual_observations.length : 0);
 
     // 5. Calcul de confiance 3 piliers (kpi.ts)
-    const kpiResult = calculateConfidenceBreakdown(wf) ?? {
-      score: 76,
-      breakdown: {
-        structureScore: 40,
-        blockingScore: 16,
-        citationScore: 20,
-        blockingCount: 4,
-        unmatchedCount: 0,
-        totalFacts: 18,
-      },
-    };
-
-    // Calcul de complétion de revue
-    const checklist = [
-      stepCount > 0,
-      componentCount > 0,
-      visionAnchorsCount > 0,
-      kpiResult.breakdown.blockingCount === 0,
-      openClarificationsCount === 0,
-    ];
-    const reviewCompletion =
-      checklist.filter(Boolean).length / checklist.length;
+    const kpiResult = calculateConfidenceBreakdown(wf)!;
+    const reviewCompletion = kpiResult.score / 100;
 
     return {
       componentCount,
@@ -153,7 +134,7 @@ export function ReviewMetricsPanel({ version: _version }: ReviewMetricsPanelProp
   } = metrics;
 
   const { score, breakdown } = kpiResult;
-  const isReady = breakdown.blockingCount === 0 && openClarificationsCount === 0;
+  const isReady = breakdown.blockingCount === 0 && breakdown.unmatchedCount === 0;
 
   return (
     <div className="space-y-6">
@@ -243,10 +224,10 @@ export function ReviewMetricsPanel({ version: _version }: ReviewMetricsPanelProp
                 <Layers className="h-3.5 w-3.5" />
                 Structure & Complétude
               </span>
-              <span className="font-mono">{breakdown.structureScore} / 40</span>
+              <span className="font-mono">{breakdown.structureScore} / 60</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Composants physiques ({componentCount}/7), étapes ({stepCount}/8) et repères visuels AR extraits.
+              Composants physiques ({componentCount}), étapes ({stepCount}) et repères visuels AR extraits.
             </p>
           </div>
 
@@ -257,10 +238,10 @@ export function ReviewMetricsPanel({ version: _version }: ReviewMetricsPanelProp
                 <ShieldCheck className="h-3.5 w-3.5" />
                 Maturité Métier HSE
               </span>
-              <span className="font-mono">{breakdown.blockingScore} / 40</span>
+              <span className="font-mono">{breakdown.blockingScore} / 20</span>
             </div>
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Pénalité de 6 pts par point bloquant. Actuellement {breakdown.blockingCount} point(s) bloquant(s).
+              Pénalité de 4 pts par point bloquant. Actuellement {breakdown.blockingCount} point(s) bloquant(s).
             </p>
           </div>
 
@@ -307,8 +288,10 @@ export function ReviewMetricsPanel({ version: _version }: ReviewMetricsPanelProp
             )}
             <h4 className="text-sm font-bold">
               {isReady
-                ? "Brouillon prêt pour approbation & publication"
-                : `Non prêt — ${breakdown.blockingCount} point${breakdown.blockingCount > 1 ? "s" : ""} bloquant${breakdown.blockingCount > 1 ? "s" : ""}`}
+                ? "Prêt pour publication — 0 point bloquant"
+                : breakdown.blockingCount > 0
+                  ? `Non prêt — ${breakdown.blockingCount} point${breakdown.blockingCount > 1 ? "s" : ""} bloquant${breakdown.blockingCount > 1 ? "s" : ""}`
+                  : `Citations à vérifier — ${breakdown.unmatchedCount}`}
             </h4>
           </div>
 

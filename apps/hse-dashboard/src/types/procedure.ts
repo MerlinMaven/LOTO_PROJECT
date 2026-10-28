@@ -25,6 +25,16 @@ export interface ApprovalRead {
   notes: string | null;
   decided_at: string;
   is_superseded: boolean;
+  signature?: HseSignature | null;
+}
+
+export interface HseSignature {
+  name: string;
+  role: string;
+  reviewer_id: string;
+  signed_at: string;
+  sha256: string;
+  accepted: boolean;
 }
 
 export interface ProcedureVersionSummary {
@@ -96,6 +106,7 @@ export interface ApprovalCreatePayload {
   decision: ApprovalDecision;
   notes?: string;
   approved_by: string;
+  signature?: { name: string; accepted: boolean };
 }
 
 export interface ProcedurePublishResponse {

@@ -94,7 +94,7 @@ function ConfidenceTooltip({
           </span>
           <span className="text-[11px] font-semibold text-slate-800 tabular-nums">
             {breakdown.structureScore}
-            <span className="font-normal text-slate-400"> / 40 pts</span>
+            <span className="font-normal text-slate-400"> / 60 pts</span>
           </span>
         </div>
         {/* Pilier 2 */}
@@ -105,7 +105,7 @@ function ConfidenceTooltip({
           </span>
           <span className="text-[11px] font-semibold text-slate-800 tabular-nums">
             {breakdown.blockingScore}
-            <span className="font-normal text-slate-400"> / 40 pts</span>
+            <span className="font-normal text-slate-400"> / 20 pts</span>
             {breakdown.blockingCount > 0 && (
               <span className="ml-1 text-[10px] font-normal text-rose-500">
                 ({breakdown.blockingCount} bloquant{breakdown.blockingCount > 1 ? "s" : ""})

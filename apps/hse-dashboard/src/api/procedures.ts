@@ -73,6 +73,8 @@ export const proceduresApi = {
       clarification_id: string;
       answer: string;
       rationale?: string;
+      answer_complete?: boolean;
+      affected_steps_reviewed?: boolean;
       step_id?: string;
     },
   ): Promise<ProcedureVersionRead> {

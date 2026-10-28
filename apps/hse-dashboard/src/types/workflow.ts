@@ -35,6 +35,8 @@ export interface WorkflowStep {
   warnings?: string[];
   validation?: StepValidation;
   verification?: StepVerification;
+  execution_phase?: string;
+  guidance?: { component_refs?: string[]; observable_cues?: string[]; [key: string]: unknown };
   [key: string]: unknown;
 }
 

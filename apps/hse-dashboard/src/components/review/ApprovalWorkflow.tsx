@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
-import { useApproveProcedure, usePublishProcedure } from "@/hooks/useProcedures";
+import { useApproveProcedure, usePublishProcedure, useUpdateDraft } from "@/hooks/useProcedures";
 import { useAuthStore } from "@/store/authStore";
 import { useReviewStore } from "@/store/reviewStore";
 import type { ApprovalDecision, ProcedureVersionRead } from "@/types/procedure";
 import { canTransition, isEditable } from "@/lib/status";
 import type { ApiError } from "@/types/api";
-import { getBusinessBlockingCount } from "@/lib/kpi";
+import { getBusinessBlockingCount, getBusinessBlockers, isClarificationResolved } from "@/lib/kpi";
 import { CheckCircle2, AlertCircle, ShieldCheck, Send, Check, Lock } from "lucide-react";
 
 interface ApprovalWorkflowProps {
@@ -27,11 +27,16 @@ export function ApprovalWorkflow({
   const [publishDirectly, setPublishDirectly] = useState(true);
   const [notes, setNotes] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  const [signatureName, setSignatureName] = useState("");
+  const [signatureAccepted, setSignatureAccepted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const reviewerId = useAuthStore((s) => s.reviewerId);
   const approveMutation = useApproveProcedure(procedureId);
   const publishMutation = usePublishProcedure(procedureId);
+  const updateDraft = useUpdateDraft(procedureId);
   const draft = useReviewStore((s) => s.draft);
+  useEffect(() => { setSignatureName(reviewerId); setSignatureAccepted(false); }, [reviewerId, version.id]);
 
   // Synchronisation avec les boutons d'action du haut de page
   useEffect(() => {
@@ -51,54 +56,11 @@ export function ApprovalWorkflow({
   }, []);
 
   const allActiveBlockers = useMemo(() => {
-    const list: Array<{ id: string; label: string }> = [];
-
-    // Clarifications non résolues
-    const clarifs = (draft?.clarifications_required ?? []) as Array<Record<string, unknown>>;
-    clarifs.forEach((q) => {
-      if (q.status !== "resolved") {
-        const question = String(q.question || "Clarification requise");
-        const relatedComps = Array.isArray(q.related_component_ids)
-          ? (q.related_component_ids as string[]).filter(Boolean)
-          : [];
-
-        // Détermination de la règle et des composants normalisés (R-01..R-04)
-        let ruleId = "R-0" + (list.length + 1);
-        if (relatedComps.includes("C05") || relatedComps.includes("C07")) ruleId = "R-01";
-        else if (relatedComps.includes("C06")) ruleId = "R-02";
-        else if (relatedComps.includes("C02") || relatedComps.includes("C03")) ruleId = "R-03";
-        else if (relatedComps.includes("C04")) ruleId = "R-04";
-
-        const compLabel = relatedComps.length > 0 ? relatedComps.join(" / ") : "";
-        const prefix = compLabel ? `[${ruleId} • ${compLabel}] ` : `[${ruleId}] `;
-
-        list.push({
-          id: String(q.id || list.length),
-          label: `${prefix}${question} — Non résolu`,
-        });
-      }
-    });
-
-    // Diagnostics bloquants
-    const diags = (draft?.validation_diagnostics ?? []) as Array<Record<string, unknown>>;
-    diags.forEach((d) => {
-      if (d.severity === "blocking" || d.severity === "error") {
-        const cat = String(d.category || "").toLowerCase();
-        if (cat === "source_integrity") return;
-        if (String(d.code) === "CLARIFICATION_OPEN") return;
-        const msg = String(d.message || d.code || "").trim();
-        const entity = d.entity_id ? `[${d.entity_id}] ` : "";
-        if (msg && !list.some((it) => it.label.includes(msg))) {
-          list.push({
-            id: String(d.code || d.entity_id || list.length),
-            label: `${entity}${msg} — Bloquant`,
-          });
-        }
-      }
-    });
-
-    return list;
-  }, [draft?.clarifications_required, draft?.validation_diagnostics]);
+    return getBusinessBlockers((draft ?? {}) as Record<string, unknown>).map((issue, index) => ({
+      id: String(issue.id ?? issue.code ?? index),
+      label: String(issue.message ?? issue.question ?? issue.code ?? "Point bloquant"),
+    }));
+  }, [draft]);
 
   const totalBlockingCount = useMemo(() => {
     return getBusinessBlockingCount({ workflow_definition: draft as Record<string, unknown> });
@@ -106,7 +68,7 @@ export function ApprovalWorkflow({
 
   const totalClarifsCount = (draft?.clarifications_required ?? []).length;
   const resolvedClarifsCount = ((draft?.clarifications_required ?? []) as Array<Record<string, unknown>>).filter(
-    (q) => q.status === "resolved"
+    isClarificationResolved
   ).length;
 
   const hasBlockingIssues = totalBlockingCount > 0;
@@ -136,25 +98,42 @@ export function ApprovalWorkflow({
       setFormError("Identifiant du signataire requis.");
       return;
     }
+    if (decision === "approved" && (!signatureName.trim() || !signatureAccepted)) {
+      setFormError("Renseignez votre nom et confirmez votre engagement pour signer.");
+      return;
+    }
+    if (submitting) return;
+    setSubmitting(true);
     try {
+      const state = useReviewStore.getState();
+      let versionId = version.id;
+      if (state.draft && state.isDirty()) {
+        const saved = await updateDraft.mutateAsync({ workflow_definition: state.draft, edited_by: reviewerId });
+        state.commitSaved(saved);
+        versionId = saved.id;
+      }
       await approveMutation.mutateAsync({
-        versionId: version.id,
+        versionId,
         payload: {
-          version_id: version.id,
+          version_id: versionId,
           decision,
           notes: notes.trim() || undefined,
           approved_by: reviewerId,
+          signature: decision === "approved" ? { name: signatureName.trim(), accepted: signatureAccepted } : undefined,
         },
       });
 
       if (decision === "approved" && publishDirectly) {
-        await publishMutation.mutateAsync(version.id);
+        await publishMutation.mutateAsync(versionId);
       }
 
       setReviewModalOpen(false);
       setNotes("");
+      setSignatureAccepted(false);
     } catch (err) {
       setFormError((err as ApiError).message ?? "Échec de l'approbation.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -323,13 +302,13 @@ export function ApprovalWorkflow({
       <Modal
         open={reviewModalOpen}
         title="Approbation formelle HSE"
-        onClose={() => setReviewModalOpen(false)}
+        onClose={() => { if (!submitting) setReviewModalOpen(false); }}
         footer={
           <>
             <Button
               variant="ghost"
               onClick={() => setReviewModalOpen(false)}
-              disabled={approveMutation.isPending}
+              disabled={submitting}
             >
               Annuler
             </Button>
@@ -337,7 +316,8 @@ export function ApprovalWorkflow({
               id="confirm-approval-btn"
               variant={decision === "approved" ? "success" : "danger"}
               onClick={handleApprove}
-              loading={approveMutation.isPending || publishMutation.isPending}
+              loading={submitting}
+              disabled={decision === "approved" && (!signatureAccepted || !signatureName.trim() || hasBlockingIssues)}
             >
               {decision === "approved"
                 ? publishDirectly
@@ -394,6 +374,22 @@ export function ApprovalWorkflow({
               </p>
             ) : null}
           </div>
+
+          {decision === "approved" && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
+              <label className="block font-semibold text-slate-800">
+                Nom complet / identifiant du signataire HSE
+                <input value={signatureName} onChange={(event) => { setSignatureName(event.target.value); setSignatureAccepted(false); }}
+                  className="mt-1 w-full rounded border border-slate-300 p-2 text-xs" maxLength={255} />
+              </label>
+              <label className="flex items-start gap-2">
+                <input type="checkbox" checked={signatureAccepted} onChange={(event) => setSignatureAccepted(event.target.checked)} />
+                <span>Je confirme la revue HSE et signe formellement cette version de la procédure.</span>
+              </label>
+              <p className="font-serif italic text-slate-700">{signatureName} · Responsable HSE</p>
+              <p className="text-slate-500">Signature horodatée et empreinte SHA-256 enregistrées lors de l’approbation.</p>
+            </div>
+          )}
 
           {decision === "approved" && (
             <label className="flex items-center gap-2.5 rounded-lg bg-blue-50 border border-blue-200 p-2.5 text-xs text-blue-900 cursor-pointer hover:bg-blue-100/60 transition">

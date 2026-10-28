@@ -30,11 +30,15 @@ http.interceptors.response.use(
   (response) => response,
   (error: AxiosError<ApiErrorBody>) => {
     const status = error.response?.status ?? 0;
-    const body = error.response?.data;
+    const body = error.response?.data as ApiErrorBody | { detail?: unknown } | undefined;
 
     if (body && typeof body === "object" && "error" in body) {
       const e = body.error;
       return Promise.reject(new ApiError(e.code, e.message, status, e.details));
+    }
+
+    if (body && typeof body === "object" && "detail" in body && typeof body.detail === "string") {
+      return Promise.reject(new ApiError("REQUEST_REJECTED", body.detail, status));
     }
 
     // FastAPI request-validation errors (422) have a different shape.

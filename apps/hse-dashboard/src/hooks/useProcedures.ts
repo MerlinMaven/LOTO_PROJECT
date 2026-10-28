@@ -87,6 +87,8 @@ export function useResolveClarification(procedureId: string) {
       clarification_id: string;
       answer: string;
       rationale?: string;
+      answer_complete?: boolean;
+      affected_steps_reviewed?: boolean;
       step_id?: string;
     }) => proceduresApi.resolveClarification(procedureId, payload),
     onSuccess: () => {

@@ -1,15 +1,14 @@
-# README image slots
+# README Captures & Demonstrations
 
-The three SVG files are labelled placeholders, not screenshots or evidence of a
-device run. Add captures here using the names below, then replace the corresponding
-`.svg` image link in the root README with the new `.png` or `.gif` filename.
+The active visuals referenced in the root `README.md` are genuine application captures and execution demonstrations:
 
-| Slot | Suggested capture |
-| --- | --- |
-| `hse-dashboard.png` | Procedure list and AI PDF generator. |
-| `resolution-vision.png` | Direct Resolution Center and the C01–C07 Vision matrix. |
-| `ar-audit.png` or `ar-audit.gif` | Unity execution beside the final signed audit PDF. |
+| Slot | File | Description |
+| --- | --- | --- |
+| **HSE Dashboard** | [`hse-dashboard.png`](hse-dashboard.png) | Cockpit HSE avec KPI, conformité OSHA 1910.147 et liste des procédures. |
+| **Resolution & Vision** | [`resolution-vision.png`](resolution-vision.png) | Centre de Résolution Direct des points bloquants et Matrice Vision C01–C07. |
+| **AR Execution** | [`ar-audit.gif`](ar-audit.gif) | Déroulement animé complet de l'assistance opérateur sous Unity 6 AR. |
+| *(Alternative)* | [`ar-audit.png`](ar-audit.png) | Vue composite juxtaposant la guidance Unity AR et le rapport d'audit PDF signé. |
 
-Prefer a 16:9 landscape image with readable labels. Use demonstration identities
-and redact confidential source documents, API keys and operational records. Keep
-runtime reports out of Git; a deliberately sanitized screenshot belongs here.
+### Guide pour mettre à jour les captures
+- Format recommandé : Ratio paysage 16:9 avec étiquettes lisibles (ex: 1600×900).
+- Pour remplacer le GIF ou les captures, écraser simplement le fichier correspondant dans ce dossier `docs/images/`.

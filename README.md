@@ -1,4 +1,4 @@
-﻿# SmartLOTO
+# SmartLOTO
 
 **AI-Assisted Lockout/Tagout HSE Validation & AR Guidance System**
 
@@ -33,9 +33,9 @@ graph LR
 
 | HSE Dashboard & AI Procedure Generator | Direct Resolution Center & Vision Matrix | AR Execution & Signed Audit Report |
 | --- | --- | --- |
-| ![Placeholder: HSE dashboard](docs/images/hse-dashboard.svg) | ![Placeholder: resolution center and C01–C07 vision states](docs/images/resolution-vision.svg) | ![Placeholder: AR execution and audit PDF](docs/images/ar-audit.svg) |
+| ![HSE Dashboard & AI Procedure Generator](docs/images/hse-dashboard.png) | ![Direct Resolution Center & Vision Matrix](docs/images/resolution-vision.png) | ![AR Guidance & Unity Execution](docs/images/ar-audit.gif) |
 
-The images above are labelled placeholders, not application captures. Add screenshots/GIFs using the [image guide](docs/images/README.md).
+Captures réelles de l'application et démonstration animée : Tableau de bord HSE, Centre de Résolution & Matrice Vision, et déroulement de l'intervention sous Unity 6 AR.
 The [v0.3 technical dossier](apps/authoring-service/data/reference/SmartLOTO_SL-POC-01_Dossier_Technique_Descriptif_v0.3.pdf) and [synthetic demo sequence](apps/authoring-service/data/reference/SmartLOTO_sequence_A09_corrigee/LIRE_MOI.md) are included.
 
 ## Repository Structure
@@ -54,7 +54,7 @@ SmartLOTO/
 │   └── hse-dashboard/          # React/Vite HSE console and frontend tests
 ├── unity-app/                  # C# source bundle; integrate into an existing Unity project
 │   └── Assets/                 # StreamingAssets contracts and editor utility
-├── docs/                       # Architecture, contracts, setup notes and image placeholders
+├── docs/                       # Architecture, contracts, setup notes and application captures
 ├── scripts/                    # Local API launchers, explicit demo reset and contract check
 ├── infra/                      # Historical container/schema configuration; see infra/README.md
 ├── data/                       # Local shared SQLite state (ignored)

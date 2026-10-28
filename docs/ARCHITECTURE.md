@@ -1,102 +1,46 @@
-# SmartLOTO — Architecture Overview
+﻿# Architecture
 
-## Two-Service Boundary
+SmartLOTO is a monorepo with two Python/FastAPI services, one React/Vite console and
+a Unity C# source bundle. Paths under `apps/`, `unity-app/` and `data/` are preserved.
 
-SmartLOTO is split into two distinct services with **different audiences, data models, and deployment lifecycles**.  
-They share the same Supabase database but must never be merged into one process.
+| Module | Entry point | Responsibility |
+| --- | --- | --- |
+| Authoring API | `apps/authoring-service/main.py` | PDF ingestion, extraction jobs, HSE decisions, exact-revision approval/publication and audit events. |
+| Field API | `apps/field-service/main.py` | Published procedure access, pinned interventions, contextual vision, human confirmation, evidence and PDF reports. |
+| HSE console | `apps/hse-dashboard/src/main.tsx` | Generation, component/workflow/Vision review, source verification, signature and publication. |
+| Unity source bundle | `unity-app/SmartLOTOClient.cs` and companion scripts | Operator UI, QR identification, image capture, guidance, confirmation and closure. |
 
-```
-┌─────────────────────────────────┐         ┌──────────────────────────────────────┐
-│       FIELD SERVICE             │         │          AUTHORING SERVICE            │
-│   uvicorn backend:app           │         │   uvicorn backend/app/main:app        │
-│                                 │         │                                       │
-│  Audience: AR operators         │         │  Audience: HSE engineers             │
-│  Client:   Quest 2 headset      │         │  Client:   Web dashboard             │
-│  Status:   PRODUCTION           │         │  Status:   Development               │
-│                                 │         │                                       │
-│  Source:   backend.py           │         │  Source:   backend/app/              │
-│            ↕ (thin launcher)    │         │            ├── api/                  │
-│            runtime/             │         │            ├── models/               │
-│            ├── config.py        │         │            ├── services/             │
-│            ├── database.py      │         │            └── tests/                │
-│            ├── models.py        │         │                                       │
-│            ├── api/             │         │  PK type:   UUID                     │
-│            │   ├── procedures   │         │  Workflow:  {phases:[{stages:[steps}]}│
-│            │   └── interventions│         │                                       │
-│            └── services/        │         │                                       │
-│                ├── vision.py    │         │                                       │
-│                ├── storage.py   │         │                                       │
-│                └── pdf.py       │         │                                       │
-│                                 │         │                                       │
-│  PK type:   TEXT (machine_id)   │         │                                       │
-│  Workflow:  {lockout:[],        │         │                                       │
-│              restoration:[],    │         │                                       │
-│              anchors:{}}        │         │                                       │
-└─────────────────────────────────┘         └──────────────────────────────────────┘
-                │                                           │
-                └──────────────────┬────────────────────────┘
-                                   │
-                           ┌───────▼───────┐
-                           │   Supabase    │
-                           │  procedures   │
-                           │ interventions │
-                           │smartloto-asset│
-                           └───────────────┘
-```
+## Data flow
 
----
+1. Authoring stores an uploaded PDF and its content fingerprint, extracts text/OCR,
+   invokes the configured model and validates the canonical draft (`schema_version: 2.0`).
+2. The console edits that draft, records clarification decisions and source review,
+   then saves before approval. A reviewer signature is attached to the approval audit
+   event; it is not injected into the Unity workflow contract.
+3. Publication points to an exact approved revision. A later draft does not replace
+   the revision already pinned by an intervention.
+4. Field verification resolves the step from that pinned revision. Visual checks,
+   human confirmations and overrides are distinct records. Candidate localization
+   is guidance, not independent proof that a safety criterion is satisfied.
+5. Closure stores the operator signature and builds the PDF with the HSE approval
+   belonging to the executed revision. Historical records without a signature remain
+   distinguishable from newly signed records.
 
-## Frozen Unity API Contracts
+## Persistence and files
 
-The following 7 endpoints are called by `unity-app/Assets/Scripts/SmartLOTOClient.cs`.  
-**Do NOT change their paths, HTTP methods, or response shapes** without recompiling the Quest app.
+- Both APIs use `data/smartloto.db` in the supported local setup.
+- Original uploads live in `apps/authoring-service/data/documents/`.
+- Field evidence, signatures and reports live in `apps/field-service/storage/` and
+  are served through `/storage/...`. `BASE_URL` controls the generated public URLs.
+- All runtime state is ignored by Git. Official fixtures remain under
+  `apps/authoring-service/data/reference/` and `docs/contracts/`.
+- Source contracts: [authoring schemas](../apps/authoring-service/app/schemas_workflow.py),
+  [Field DTOs](../apps/field-service/app/models.py), [Unity DTOs](../unity-app/SmartLOTOClient.cs).
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/procedures` | List approved procedures |
-| GET | `/procedures/{machine_id}` | Load a single procedure |
-| POST | `/procedures/{machine_id}/anchors` | Save calibrated AR anchors |
-| POST | `/interventions/start` | Start a new LOTO intervention |
-| POST | `/interventions/validate-step` | Validate a step via YOLO-World |
-| POST | `/interventions/override-step` | Manual override with evidence photo |
-| POST | `/interventions/close` | Close intervention + generate PDF |
+## Verification boundaries
 
----
-
-## Field Service — Module Responsibilities
-
-| Module | Responsibility |
-|--------|----------------|
-| `backend.py` | Entry-point only. Loads `.env`, imports `app` from `runtime.main`. |
-| `runtime/config.py` | All environment variables and constants in one place. |
-| `runtime/database.py` | Initialises Supabase client and YOLO-World model at import time. |
-| `runtime/models.py` | Pydantic request/response schemas (identical to original `backend.py` models). |
-| `runtime/main.py` | FastAPI app factory — CORS middleware, router registration, health check. |
-| `runtime/api/procedures.py` | `GET /procedures`, `GET /procedures/{id}`, `POST /procedures/{id}/anchors`. |
-| `runtime/api/interventions.py` | `POST /interventions/*` — start, validate, override, close. |
-| `runtime/services/vision.py` | Base64 decode + YOLO-World zero-shot detection. |
-| `runtime/services/storage.py` | Upload to Supabase Storage, return public URL. |
-| `runtime/services/pdf.py` | Generate OSHA-style PDF audit report via ReportLab. |
-
----
-
-## Authoring Service — High-Level Structure
-
-The authoring service (`backend/app/`) implements the full LOTO authoring lifecycle:
-
-- **Procedure CRUD**: create, edit, submit, approve/reject procedures
-- **Intervention Runtime Engine** (Phase 5): FSM-based step execution with validation strategies
-- **Validation Strategies**: `ManualConfirmation`, `VisionDetectionStub`, `InverseVisionAbsenceStub`, `SensorThresholdStub`
-- **Audit Events**: full audit trail for every state transition
-- **Override System**: HSE-review flagging with photo evidence
-
-See `backend/app/` for full implementation and `backend/tests/` for 302+ unit + integration tests.
-
----
-
-## Key Constraints
-
-1. **`unity-app/` is read-only.** The XR app cannot be hot-patched. Any incompatible API change requires a full Quest app rebuild and redistribution.
-2. **Two data models must not be merged.** The Field Service uses TEXT `machine_id` PKs and a flat `{lockout, restoration, anchors}` workflow schema. The Authoring Service uses UUID PKs and a hierarchical `{phases → stages → steps}` schema.
-3. **No LLM calls at runtime.** All step validation happens via YOLO-World or manual confirmation. LLM assistance is reserved for the authoring-time `GENERATE` workflow.
-4. **Only APPROVED procedures can start an intervention.** Both services enforce `status = "APPROVED"` on procedure fetch.
+Software checks validate schema consistency, revision identity and recorded
+workflow behavior. HSE review establishes the engineering decision. Synthetic
+images and object detections do not establish physical isolation on equipment.
+See [generation details](../apps/authoring-service/GENERATION.md),
+[Unity API reference](unity_api_contracts.md) and [release scope](RELEASE.md).

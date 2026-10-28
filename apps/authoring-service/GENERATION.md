@@ -39,19 +39,17 @@ successful provider response is never treated as approval.
 
 ## Operator compatibility
 
-The field-service and Unity DTOs now carry canonical phases, steps, verification methods,
-criteria, the procedure-version ID, and the complete source workflow JSON. Unity iterates
-the supplied phases in order and requests the exact revision pinned when an intervention
-starts. A superseded revision remains readable by that intervention. No spatial pose is
-inferred from the PDF. Visual observations and human confirmations still require an
-operator confirmation with a reason and evidence image. Measurement, sensor-signal,
-combined-evidence, and undefined methods are blocked from approval/publication until the
-Unity interaction can execute those methods faithfully. Candidate object detection is
-never treated as proof of equipment state.
+The field-service and Unity DTOs carry canonical phases, steps, verification methods,
+criteria, the procedure-version ID and source workflow JSON. Interventions request
+and retain their pinned revision. Human maintenance confirmation uses its dedicated
+attestation endpoint; it is not an override and requires no vision capture. Visual
+verification uses the stored HSE context. Candidate localization is guidance and
+never a separate proof of equipment state.
 
-The C# sources were updated, but a Unity editor/player build and device run were not
-available in this environment. The JSON contract is covered by field-service tests; that
-does not replace a build of the deployed Quest application.
+The source bundle in `unity-app/` is integrated into an external Unity project.
+See [Unity setup](../../docs/UNITY_INTEGRATION_READY.md) for dependencies and
+[API contracts](../../docs/unity_api_contracts.md) for the implemented routes.
+Contract tests do not replace an editor/device build of the receiving project.
 
 ## Persistence and lifecycle
 
@@ -65,5 +63,6 @@ dropping existing records.
 
 Tests in `tests/test_workflow_validation.py` use synthetic data to exercise schema and
 invariant checks (multiple energy types, missing objectives, contradictions, human and
-measurement checks, dependencies, and filename/ID independence). They are deterministic
-software tests, not industrial validation and not simulated claims about Gemini output.
+measurement checks, dependencies, and filename/ID independence). Most are isolated software checks; the normalization test that invokes semantic
+grounding requires the configured provider. Neither suite is industrial validation
+or a substitute for HSE review.

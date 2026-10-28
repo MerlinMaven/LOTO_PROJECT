@@ -53,7 +53,7 @@ Thumbs.db
 *.swp
 *.swo
 .idea/
-.vscode/settings.json
+.vscode/
 
 # ── Tunnel tools (ngrok, localtunnel etc.) ────────────────────────────────────
 # Never commit tunnel executables or archives to version control.
@@ -70,7 +70,8 @@ ngrok*
 *.db-shm
 *.sqlite
 *.sqlite3
-/data/
+/data/*
+!/data/.gitkeep
 apps/authoring-service/data/documents/*
 !apps/authoring-service/data/documents/.gitkeep
 apps/field-service/storage/evidence/*
@@ -120,3 +121,54 @@ htmlcov/
 /SmartLOTO.docx
 /smartloto_report.tex
 /text.txt
+
+# Logs, SQLite sidecars and local credentials
+*.log
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Unity-generated IDE files and Android builds (never ignore source .meta files)
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.apk
+*.aab
+[Mm]emoryCaptures/
+[Rr]ecordings/
+
+# Local agent/editor state
+.cursor/
+.codex/
+.agents/
+
+# One-off diagnostics and retired demo repair tools: retain locally, do not publish.
+/scripts/check_db.py
+/scripts/preflight_check.py
+/scripts/replay_sequence.py
+/scripts/patch_sl_poc_01.py
+/scripts/test_field_api.py
+
+# Duplicate editor export; canonical copy is unity-app/Assets/Editor/SmartLotoCleaner.cs.
+/Assets/Editor/SmartLotoCleaner.cs
+
+# Workstation-specific session notes and agent instructions, retained locally.
+/docs/walkthrough.md
+/docs/verification-smartloto.md
+/docs/bugfix-hse-publication.md
+/apps/authoring-service/data/reference/SmartLOTO_sequence_A09_corrigee/PROMPT_CODEX.md
+
+# Root-level scratch files only; application test suites stay tracked.
+/debug_*.py
+/tmp_*
+/scratch_*
+/Fix_Summary.md

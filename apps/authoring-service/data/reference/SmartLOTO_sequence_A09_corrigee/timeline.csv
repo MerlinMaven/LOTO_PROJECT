@@ -1,0 +1,30 @@
+﻿index,step,phase,moment,image,description
+1,A01,preparation,avant,images/01_A01_avant.jpg,"État initial, lampe lumineuse, pile connectée et carter fermé."
+2,A01,preparation,observation,images/02_A01_observation.jpg,Observation des repères fixes ; aucun changement mécanique.
+3,A01,preparation,apres,images/03_A01_apres.jpg,État initial observé ; A-01 est une observation.
+4,A02,consignation,avant,images/04_A02_avant.jpg,"Commande initiale ON, lampe lumineuse."
+5,A02,consignation,geste,images/05_A02_geste.jpg,Action sur la commande OFF.
+6,A02,consignation,apres,images/06_A02_apres.jpg,"Commande prévue OFF, lampe non lumineuse, pile encore connectée."
+7,A03,consignation,avant,images/07_A03_avant.jpg,"Pile dans le support, carter fermé."
+8,A03,consignation,geste,images/08_A03_geste.jpg,Extraction de la pile ; séparation non encore certaine.
+9,A03,consignation,apres,images/09_A03_apres.jpg,Pile tenue hors du support ; deux logements et réceptacle vides.
+10,A04,consignation,avant,images/10_A04_avant.jpg,Pile tenue hors du support et hors du réceptacle.
+11,A04,consignation,geste,images/11_A04_geste.jpg,Approche du réceptacle ; dépôt non encore terminé.
+12,A04,consignation,apres,images/12_A04_apres.jpg,Pile déposée dans le réceptacle ; support vide ; carter fermé.
+13,A05,maintenance,avant,images/13_A05_avant.jpg,"Carter fermé, pile stockée."
+14,A05,maintenance,geste,images/14_A05_geste.jpg,Coulissement du carter ; état transitoire non valide comme position finale.
+15,A05,maintenance,apres,images/15_A05_apres.jpg,Carter ouvert candidat ; pile stockée et support vide.
+16,A06,maintenance,avant,images/16_A06_avant.jpg,"Accès dégagé, lampe ancienne encore dans son support."
+17,A06,maintenance,retrait,images/17_A06_retrait.jpg,Retrait de la petite ampoule au-dessus de sa douille courte ; pile toujours stockée.
+18,A06,maintenance,douille_vide,images/18_A06_douille_vide.jpg,"Douille vide et ancienne lampe retirée, tenue à côté."
+19,A06,maintenance,installation,images/19_A06_installation.jpg,Présentation/insertion de la lampe de remplacement.
+20,A06,maintenance,apres_confirmation_humaine,images/20_A06_apres_confirmation_humaine.jpg,Lampe en place : état final visuellement identique à avant. Remplacement confirmé par humain.
+21,A07,remise_en_service,avant,images/21_A07_avant.jpg,"Carter ouvert candidat, pile stockée."
+22,A07,remise_en_service,geste,images/22_A07_geste.jpg,"Coulissement vers fermeture, état transitoire."
+23,A07,remise_en_service,apres,images/23_A07_apres.jpg,"Carter fermé candidat, pile toujours stockée."
+24,A08,remise_en_service,avant,images/24_A08_avant.jpg,Support vide et pile dans réceptacle.
+25,A08,remise_en_service,geste,images/25_A08_geste.jpg,"Insertion partielle de la pile, contact non confirmé."
+26,A08,remise_en_service,apres,images/26_A08_apres.jpg,"Pile dans le logement fonctionnel, réceptacle vide, commande OFF."
+27,A09,remise_en_service,avant,images/27_A09_avant.jpg,"Pile connectée, commande OFF, lampe non lumineuse."
+28,A09,remise_en_service,geste,images/28_A09_geste.jpg,Action vers ON ; observer commande et lumière séparément.
+29,A09,remise_en_service,apres,images/29_A09_apres.jpg,Commande prévue ON et lampe lumineuse.

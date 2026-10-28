@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from datetime import datetime
+import hashlib
+import json
 from typing import AsyncGenerator
 
 from fastapi import FastAPI
@@ -66,8 +68,14 @@ async def preflight_options_handler(full_path: str):
 @app.get("/")
 @app.get("/health")
 def health_check():
+    from app import config
+    from app.services.step_vision import Observation, SYSTEM_PROMPT
+    schema = json.dumps(Observation.model_json_schema(), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return {
         "status": "online",
         "service": "SmartLOTO Field Service",
         "timestamp": datetime.now().isoformat(),
+        "vision": {"provider": config.FIELD_VISION_PROVIDER, "model": config.FIELD_VISION_MODEL,
+                   "system_prompt_sha256": hashlib.sha256(SYSTEM_PROMPT.encode()).hexdigest(),
+                   "observation_schema_sha256": hashlib.sha256(schema.encode()).hexdigest()},
     }

@@ -101,6 +101,8 @@ class ProcedureStep(OpenModel):
     evidence_refs: list[SourceReference] = Field(default_factory=list)
     unresolved_conditions: list[str] = Field(default_factory=list)
     verification: Verification
+    execution_phase: str = ""
+    guidance: dict[str, Any] = Field(default_factory=dict)
 
 
 class ProcedureStage(OpenModel):

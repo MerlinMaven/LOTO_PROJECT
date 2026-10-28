@@ -9,9 +9,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Header, HTTPException
 import copy
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from pydantic import ValidationError
 
 from app.database import get_db
+from app.models import AuditEvent
 from app.schemas import (
     ApprovalCreatePayload,
     ApprovalRead,
@@ -24,6 +26,7 @@ from app.schemas import (
     ResolveClarificationPayload,
 )
 from app.services import procedure_service
+from app.services.confidence import confidence_breakdown
 from app.services.workflow_validation import apply_clarification_impact, validate_workflow
 from app.schemas_workflow import ProcedureDraftV2
 
@@ -49,17 +52,14 @@ async def list_procedures(
         # Derive generation_source from the current version's generation metadata
         gen_source = "manual"
         open_errors = 0
+        wf = {}
         if current_version:
             wf = current_version.workflow_definition or {}
             if isinstance(wf, dict):
                 meta = wf.get("_generation_metadata", {})
                 if isinstance(meta, dict):
                     gen_source = meta.get("source_type", "manual") or "manual"
-                # Count open validation errors: blocking diagnostics + unresolved clarifications (without double-counting)
-                diags = [d for d in wf.get("validation_diagnostics", []) if isinstance(d, dict) and d.get("severity") in {"blocking", "error"} and d.get("category") != "source_integrity"]
-                has_clarif_diags = any(d.get("code") == "CLARIFICATION_OPEN" for d in diags)
-                clarifs = [q for q in wf.get("clarifications_required", []) if isinstance(q, dict) and q.get("status") == "unresolved"] if not has_clarif_diags else []
-                open_errors = len(diags) + len(clarifs)
+                open_errors = confidence_breakdown(wf)["breakdown"]["blockingCount"]
         has_published = any(v.status == "published" for v in p.versions)
 
         # Détermination du statut canonique normalisé (minuscule)
@@ -85,7 +85,7 @@ async def list_procedures(
             current_version_number=max_version_number,
             version_number=max_version_number,
             generation_source=gen_source,
-            overall_confidence=None,  # computed per-step only; not aggregated here
+            overall_confidence=confidence_breakdown(wf)["score"] / 100 if wf else None,
             open_validation_errors=open_errors,
             has_published_version=has_published,
             workflow_definition=wf,
@@ -111,6 +111,12 @@ async def get_procedure(
     if not proc:
         raise HTTPException(status_code=404, detail="Procédure introuvable.")
 
+    events = (await db.execute(select(AuditEvent).where(
+        AuditEvent.machine_id == proc.machine_id,
+        AuditEvent.event_type == "PROCEDURE_APPROVED",
+    ))).scalars().all()
+    signatures = {event.payload.get("approval_id"): event.payload.get("signature")
+                  for event in events if isinstance(event.payload, dict)}
     versions_read = []
     for v in proc.versions:
         workflow = v.workflow_definition or {}
@@ -132,6 +138,7 @@ async def get_procedure(
                 created_at=a.created_at,
                 approved_by=a.reviewer_id,
                 decided_at=a.created_at,
+                signature=signatures.get(a.id),
             )
             for a in v.approvals
         ]
@@ -204,9 +211,10 @@ async def update_draft(
             if not isinstance(fact, dict) or fact.get("citation_status") != "manual_verified":
                 continue
             citation_review = fact.get("citation_review")
-            if isinstance(citation_review, dict) and str(citation_review.get("rationale", "")).strip():
+            if isinstance(citation_review, dict):
                 fact["citation_review"] = {
-                    "rationale": str(citation_review["rationale"]).strip(),
+                    **citation_review,
+                    "rationale": str(citation_review.get("rationale") or "Vérification manuelle dans le PDF source.").strip(),
                     "quote": str(fact.get("source_quote", "")),
                     "reviewed_by": x_user_id or "hse_supervisor@smartloto.io",
                     "reviewed_at": datetime.now(timezone.utc).isoformat(),
@@ -255,7 +263,10 @@ async def resolve_clarification(
     if not proc:
         raise HTTPException(status_code=404, detail="Procédure introuvable.")
 
-    versions = await procedure_service.get_versions(db, procedure_id)
+    from app.models import ProcedureVersion
+    result = await db.execute(select(ProcedureVersion).where(
+        ProcedureVersion.procedure_id == proc.machine_id).order_by(ProcedureVersion.version_number))
+    versions = list(result.scalars().all())
     draft_version = next((v for v in reversed(versions) if v.status == "draft_pending_review"), None)
     if draft_version and draft_version.workflow_definition:
         workflow = copy.deepcopy(draft_version.workflow_definition)
@@ -273,52 +284,40 @@ async def resolve_clarification(
     if not target_clarification:
         raise HTTPException(status_code=404, detail="Clarification introuvable dans le brouillon.")
 
-    target_clarification["status"] = "resolved"
+    # A response is a decision record, never an observable criterion or a documentary fact.
+    complete = bool(payload.answer_complete and payload.affected_steps_reviewed
+                    and payload.answer.strip() and (payload.rationale or "").strip())
+    target_clarification["status"] = "resolved" if complete else "unresolved"
     target_clarification["resolution"] = {
-        "answer": payload.answer,
-        "rationale": payload.rationale or "Décision HSE validée",
-        "resolved_at": datetime.now(timezone.utc).isoformat(),
+        "answer": payload.answer.strip(), "rationale": (payload.rationale or "").strip(),
+        "answer_complete": complete,
+        "resolved_at": datetime.now(timezone.utc).isoformat() if complete else None,
         "resolved_by": x_user_id or "hse_supervisor@smartloto.io",
     }
-    target_clarification["affected_steps_reviewed"] = True
+    target_clarification["affected_steps_reviewed"] = bool(payload.affected_steps_reviewed)
 
-    affected_step_ids = set(target_clarification.get("affected_step_ids") or [])
-    if payload.step_id:
-        affected_step_ids.add(payload.step_id)
-
-    # Adapt affected steps with the clarification answer
-    for phase in workflow.get("phases", []):
-        for stage in phase.get("stages", []):
-            for step in stage.get("steps", []):
-                s_id = str(step.get("step_id", ""))
-                is_affected = s_id in affected_step_ids
-                if not is_affected and target_clarification.get("related_component_ids"):
-                    step_comps = set(step.get("component_refs") or [])
-                    q_comps = set(target_clarification.get("related_component_ids") or [])
-                    if step_comps & q_comps:
-                        is_affected = True
-
-                if is_affected:
-                    verif = step.get("verification") or step.get("validation") or {}
-                    criteria = verif.get("criteria", [])
-                    new_criteria = []
-                    replaced = False
-                    for c in criteria:
-                        c_str = str(c)
-                        if "à définir" in c_str.lower() or "inférieure au seuil" in c_str.lower():
-                            new_criteria.append(payload.answer)
-                            replaced = True
-                        else:
-                            new_criteria.append(c_str)
-                    if not replaced and payload.answer:
-                        new_criteria.append(f"Critère validé : {payload.answer}")
-                    verif["criteria"] = new_criteria
-                    step["verification"] = verif
-
-                    inst = str(step.get("instruction", ""))
-                    if "à définir" in inst.lower():
-                        inst = inst.replace("(à définir)", payload.answer).replace("à définir", payload.answer)
-                        step["instruction"] = inst
+    if complete:
+        # Keep the HSE decision separate from documentary facts and observable criteria.
+        note = f"[HSE {payload.clarification_id}] {payload.answer.strip()} — {(payload.rationale or '').strip()}"
+        related_ids = {str(cid).casefold() for cid in target_clarification.get("related_component_ids", [])}
+        affected_ids = set(target_clarification.get("affected_step_ids", []))
+        from app.services.workflow_validation import iter_steps
+        targets = [c for c in workflow.get("components", []) if isinstance(c, dict)
+                   and any(str(c.get(key, "")).casefold() in related_ids for key in ("component_id", "internal_id"))]
+        targets += [step for _, _, step in iter_steps(workflow) if step.get("step_id") in affected_ids]
+        for target in targets:
+            previous = str(target.get("notes_for_reviewer") or "")
+            if note not in previous:
+                target["notes_for_reviewer"] = (previous + "\n" + note).strip()
+            for flag in ("clarification_required", "blocking"):
+                if flag in target and not any(
+                    q.get("status") != "resolved" and (
+                        target.get("step_id") in q.get("affected_step_ids", []) or
+                        any(str(target.get(key, "")).casefold() in {str(cid).casefold() for cid in q.get("related_component_ids", [])}
+                            for key in ("component_id", "internal_id")))
+                    for q in clarifications if isinstance(q, dict)
+                ):
+                    target[flag] = False
 
     # Update clarification_needed on components
     all_unresolved_comps = set()
@@ -393,7 +392,13 @@ async def approve_procedure(
             reviewer_id=resolved_reviewer_id,
             decision=payload.decision,
             notes=payload.notes or None,
+            signature=payload.signature.model_dump() if payload.signature else None,
         )
+        event = (await db.execute(select(AuditEvent).where(
+            AuditEvent.machine_id == procedure_id,
+            AuditEvent.event_type == "PROCEDURE_APPROVED",
+        ).order_by(AuditEvent.created_at.desc()))).scalars().first()
+        signed_record = event.payload.get("signature") if event and event.payload.get("approval_id") == approval.id else None
         return ApprovalRead(
             id=approval.id,
             version_id=approval.version_id,
@@ -401,6 +406,9 @@ async def approve_procedure(
             decision=approval.decision,
             notes=approval.notes,
             created_at=approval.created_at,
+            approved_by=approval.reviewer_id,
+            decided_at=approval.created_at,
+            signature=signed_record,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -451,16 +459,6 @@ async def export_procedure(
 
     wf = copy.deepcopy(target_version.workflow_definition)
 
-    # Enrichir les composants si nécessaire
-    if "components" in wf and isinstance(wf["components"], list):
-        from app.services.document_generation_service import enrich_component_signatures
-        wf["components"] = [
-            enrich_component_signatures(c, idx) if isinstance(c, dict) else c
-            for idx, c in enumerate(wf["components"])
-        ]
-
-    # Importer la normalisation stricte Unity de field-service ou équivalent
-    from app.services.document_generation_service import POC_COMPONENT_SIGNATURES
     sig_map = {
         "marking": "MARQUAGE",
         "fixed_text": "MARQUAGE",
@@ -481,17 +479,17 @@ async def export_procedure(
         desc = str(c.get("description") or "").strip()
 
         clean_sigs = []
-        for feat in (c.get("invariant_features") or []):
+        for feat in (c.get("physical_signatures") or c.get("invariant_features") or []):
             ftype = str(feat.get("feature_type") or "marking").strip()
             clean_sigs.append({
-                "signature_type": sig_map.get(ftype.lower(), "MARQUAGE"),
+                "signature_type": feat.get("signature_type") or sig_map.get(ftype.lower(), ftype),
                 "feature_type": ftype,
                 "description": str(feat.get("description") or "").strip(),
                 "details": str(feat.get("details") or "").strip(),
             })
 
         clean_rules = []
-        for st in (c.get("verifiable_states") or c.get("states") or []):
+        for st in (c.get("state_rules") or c.get("verifiable_states") or c.get("states") or []):
             clean_rules.append({
                 "state_name": str(st.get("state_name") or "").strip().upper(),
                 "physical_rule": str(st.get("physical_rule") or "").strip(),
@@ -538,7 +536,7 @@ async def export_procedure(
             for st_idx, st in enumerate(s.get("steps") or s.get("actions") or [], start=1):
                 stid = str(st.get("step_id") or st.get("action_id") or f"A-{st_idx}").strip()
                 instruction = str(st.get("instruction") or st.get("description") or "").strip()
-                crefs = [str(r).strip() for r in (st.get("component_refs") or [])]
+                crefs = list(dict.fromkeys(str(r).strip() for r in [st.get("primary_component"), st.get("component_ref"), *(st.get("component_refs") or [])] if r))
                 v_raw = st.get("verification") or st.get("validation") or {}
                 v_method = str(v_raw.get("method") or "visual_observation").strip()
                 v_criteria = [str(cr).strip() for cr in (v_raw.get("criteria") or [])]
@@ -555,6 +553,7 @@ async def export_procedure(
                     unity_hint = "Validation Humaine (Bouton Virtuel)"
 
                 clean_steps.append({
+                    **st,
                     "step_id": stid,
                     "action_id": stid,
                     "sequence": int(st.get("sequence", st_idx)),
@@ -567,6 +566,7 @@ async def export_procedure(
                     "expected_result": str(st.get("expected_result") or v_raw.get("expected_state") or "").strip(),
                     "spatial_guide": None,
                     "verification": {
+                        **v_raw,
                         "method": v_method,
                         "criteria": v_criteria,
                         "required_evidence": v_evidence,
@@ -603,22 +603,13 @@ async def export_procedure(
             "id": str(q.get("id") or ""),
             "question": str(q.get("question") or ""),
             "status": str(q.get("status") or ""),
-            "answer": str((q.get("resolution") or {}).get("answer") or ""),
-            "rationale": str((q.get("resolution") or {}).get("rationale") or ""),
+            "answer": str(q.get("answer") or (q.get("resolution") or {}).get("answer") or ""),
+            "rationale": str(q.get("rationale") or (q.get("resolution") or {}).get("rationale") or ""),
             "affected_step_ids": [str(x) for x in (q.get("affected_step_ids") or [])],
             "related_component_ids": [str(x) for x in (q.get("related_component_ids") or [])],
         })
 
-    def _clean_nulls(item):
-        if item is None:
-            return ""
-        if isinstance(item, dict):
-            return {k: _clean_nulls(v) for k, v in item.items()}
-        if isinstance(item, list):
-            return [_clean_nulls(x) for x in item]
-        return item
-
-    maintenance_obj = str(wf.get("maintenance_objective") or "").strip()
+    maintenance_obj = str(wf.get("maintenance_objective") or wf.get("objective") or "").strip()
     expected_final_state = str(wf.get("expected_final_state") or "").strip()
 
     enriched_workflow = dict(wf)
@@ -651,11 +642,11 @@ async def export_procedure(
         "phases": clean_phases,
         "clarifications_required": clean_clarifications,
         "workflow_stages": enriched_workflow,
-        "workflow_json": json.dumps(enriched_workflow, ensure_ascii=False),
+        "workflow_json": json.dumps(wf, ensure_ascii=False),
         "anchors": [],
     }
 
-    return _clean_nulls(export_payload)
+    return export_payload
 
 
 @router.delete("/{procedure_id}", status_code=204)

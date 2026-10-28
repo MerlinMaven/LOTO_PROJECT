@@ -61,7 +61,9 @@ class UnityContractTests(unittest.TestCase):
             "technical_facts": [{"fact_id": "fact-test", "qualification": "documented", "source_quote": "Synthetic quoted statement"}],
         }
         payload = sanitize_procedure_for_unity({"machine_id": "SYNTH", "workflow_stages": canonical})
-        self.assertEqual(payload["workflow_stages"], canonical)
+        self.assertEqual(payload["workflow_stages"]["phases"][0]["phase_type"], "inspection")
+        self.assertEqual(payload["workflow_stages"]["phases"][0]["stages"][0]["stage_code"], "stage-test")
+        self.assertEqual(payload["workflow_stages"]["technical_facts"], canonical["technical_facts"])
         self.assertEqual(json.loads(payload["workflow_json"]), canonical)
         step = payload["workflow_stages"]["phases"][0]["stages"][0]["steps"][0]
         self.assertEqual(step["verification"]["method"], "human_confirmation")

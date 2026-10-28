@@ -54,9 +54,9 @@ class Procedure(Base):
 
     @active_version_id.setter
     def active_version_id(self, val: Optional[str]):
-        if not isinstance(self.workflow_stages, dict):
-            self.workflow_stages = {}
-        self.workflow_stages["_active_version_id"] = val
+        # Assign a fresh JSON object so SQLAlchemy persists pointer-only changes.
+        self.workflow_stages = {**(self.workflow_stages if isinstance(self.workflow_stages, dict) else {}),
+                                "_active_version_id": val}
 
     versions: Mapped[List[ProcedureVersion]] = relationship("ProcedureVersion", back_populates="procedure", cascade="all, delete-orphan")
 

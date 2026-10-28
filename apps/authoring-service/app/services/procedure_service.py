@@ -138,6 +138,8 @@ async def update_procedure_draft(
     v_num = (max([v.version_number for v in versions_list] or [0])) + 1
     workflow_definition = copy.deepcopy(workflow_definition)
     if workflow_definition.get("schema_version") == "2.0":
+        from app.services.phase_policy import normalize_draft_phases
+        workflow_definition = normalize_draft_phases(workflow_definition)
         if "components" in workflow_definition and isinstance(workflow_definition["components"], list):
             from app.services.document_generation_service import enrich_component_signatures
             workflow_definition["components"] = [
@@ -190,6 +192,7 @@ async def approve_procedure_version(
     reviewer_id: str,
     decision: str,
     notes: Optional[str] = None,
+    signature: Optional[Dict[str, Any]] = None,
 ) -> ProcedureApproval:
     proc = await get_procedure_by_id(db, identifier)
     if not proc:
@@ -225,6 +228,19 @@ async def approve_procedure_version(
     if reviewer_id == version.created_by and not is_dev:
         raise ValueError("Approbation bloquée : le relecteur doit être différent de l'auteur (règle des 4 yeux).")
 
+    signed_record = None
+    if decision == "approved" and signature is not None:
+        import hashlib
+        import json
+        from datetime import datetime, timezone
+        name = str(signature.get("name") or "").strip()
+        if not name or signature.get("accepted") is not True:
+            raise ValueError("Le nom du signataire et son engagement formel sont requis.")
+        signed_record = {"name": name, "role": "Responsable HSE", "reviewer_id": reviewer_id,
+                         "signed_at": datetime.now(timezone.utc).isoformat(), "accepted": True,
+                         "version_id": version.id}
+        signed_record["sha256"] = hashlib.sha256(json.dumps(signed_record, sort_keys=True).encode()).hexdigest()
+
     approval = ProcedureApproval(
         procedure_id=proc.machine_id,
         version_id=version.id,
@@ -251,7 +267,8 @@ async def approve_procedure_version(
         reviewer_id,
         machine_id=proc.machine_id,
         procedure_id=proc.id,
-        payload={"decision": decision, "notes": notes, "version_id": version.id},
+        payload={"decision": decision, "notes": notes, "version_id": version.id,
+                 "approval_id": approval.id, "signature": signed_record},
     )
 
     return approval

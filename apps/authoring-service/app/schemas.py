@@ -45,6 +45,12 @@ class ApprovalRead(_UTCModel):
     approved_by: Optional[str] = None
     decided_at: Optional[datetime] = None
     is_superseded: bool = False
+    signature: Optional[Dict[str, Any]] = None
+
+
+class HseSignaturePayload(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    accepted: bool
 
 
 class ApprovalCreatePayload(BaseModel):
@@ -52,6 +58,7 @@ class ApprovalCreatePayload(BaseModel):
     decision: Literal["approved", "rejected"]
     notes: Optional[str] = None
     approved_by: Optional[str] = None
+    signature: Optional[HseSignaturePayload] = None
 
 
 class ProcedureVersionRead(_UTCModel):
@@ -80,8 +87,10 @@ class DraftUpdatePayload(BaseModel):
 class ResolveClarificationPayload(_UTCModel):
     clarification_id: str
     answer: str
-    rationale: Optional[str] = "Décision HSE validée"
+    rationale: Optional[str] = None
     step_id: Optional[str] = None
+    answer_complete: bool = False
+    affected_steps_reviewed: bool = False
 
 
 class ProcedureListItem(_UTCModel):

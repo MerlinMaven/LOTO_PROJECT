@@ -89,27 +89,6 @@ def _sanitize_anchors(raw_anchors: Any) -> List[Dict[str, Any]]:
     return clean
 
 
-SIGNATURE_TYPE_MAP = {
-    "marking": "MARQUAGE",
-    "fixed_text": "MARQUAGE",
-    "color_pattern": "MARQUAGE",
-    "local_geometry": "GÉOMÉTRIE",
-    "pictogram": "PICTOGRAMME",
-    "symbol": "SYMBOLE",
-}
-
-
-def _clean_null_values(item: Any) -> Any:
-    """Remplace récursivement toute valeur None par des chaînes vides pour éviter les blocages Unity C#."""
-    if item is None:
-        return ""
-    if isinstance(item, dict):
-        return {k: _clean_null_values(v) for k, v in item.items()}
-    if isinstance(item, list):
-        return [_clean_null_values(x) for x in item]
-    return item
-
-
 def sanitize_procedure_for_unity(proc: Dict[str, Any]) -> Dict[str, Any]:
     """
     Normalise rigoureusement la procédure LOTO pour JsonUtility et Newtonsoft.Json de Unity.
@@ -133,206 +112,31 @@ def sanitize_procedure_for_unity(proc: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(raw_stages, dict):
         raw_stages = {}
 
-    if raw_stages.get("schema_version") == "2.0":
+    if not raw_stages and proc.get("phases"):
+        raw_stages = proc
+    if raw_stages.get("schema_version") == "2.0" or raw_stages.get("phases"):
+        import json
+        from app.services.workflow import normalize_workflow
         if not isinstance(raw_stages.get("phases"), list):
             raise HTTPException(status_code=409, detail="Canonical workflow has no valid phases array.")
-
-        maintenance_obj = str(raw_stages.get("maintenance_objective") or proc.get("maintenance_objective") or "").strip()
-        expected_final_state = str(raw_stages.get("expected_final_state") or "").strip()
-
-        # 1. Matrice Vision AR : Normalisation rigoureuse des 7 composants
-        clean_components = []
-        raw_comps = raw_stages.get("components") or []
-        for idx, c in enumerate(raw_comps):
-            cid = str(c.get("component_id") or f"C{idx+1:02d}").strip()
-            internal_id = str(c.get("internal_id") or cid).strip()
-            tag = str(c.get("source_tag") or c.get("tag") or cid).strip()
-            unity_class_id = str(c.get("unity_class_id") or "").strip()
-            cname = str(c.get("component_name") or c.get("label") or cid).strip()
-            label = str(c.get("label") or cname).strip()
-            desc = str(c.get("description") or "").strip()
-
-            clean_sigs = []
-            for feat in (c.get("invariant_features") or []):
-                ftype = str(feat.get("feature_type") or "marking").strip()
-                sig_type = SIGNATURE_TYPE_MAP.get(ftype.lower(), "MARQUAGE")
-                fdesc = str(feat.get("description") or "").strip()
-                clean_sigs.append({
-                    "signature_type": sig_type,
-                    "feature_type": ftype,
-                    "description": fdesc,
-                    "details": str(feat.get("details") or "").strip(),
-                })
-
-            clean_rules = []
-            for st in (c.get("verifiable_states") or c.get("states") or []):
-                sname = str(st.get("state_name") or "").strip().upper()
-                prule = str(st.get("physical_rule") or "").strip()
-                cprompt = str(st.get("candidate_prompt") or unity_class_id).strip()
-                clean_rules.append({
-                    "state_name": sname,
-                    "physical_rule": prule,
-                    "candidate_prompt": cprompt,
-                    "supported_by_unity": bool(st.get("supported_by_unity", False)),
-                    "requires_human_confirmation": True,
-                })
-
-            clean_components.append({
-                "component_id": cid,
-                "internal_id": internal_id,
-                "tag": tag,
-                "source_tag": tag,
-                "unity_class_id": unity_class_id,
-                "component_name": cname,
-                "label": label,
-                "description": desc,
-                "physical_signatures": clean_sigs,
-                "invariant_features": clean_sigs,
-                "state_rules": clean_rules,
-                "verifiable_states": clean_rules,
-                "relations": [str(r) for r in (c.get("relations") or [])],
-                "clarification_needed": bool(c.get("clarification_needed", False)),
-            })
-
-        # 2. Workflow séquentiel canonique : Normalisation des phases, stages et steps
-        clean_phases = []
-        for p_idx, p in enumerate(raw_stages.get("phases", []), start=1):
-            pid = str(p.get("phase_id") or f"P{p_idx}").strip()
-            ptype = str(p.get("phase_type") or "").strip().upper()
-            if "ISOLAT" in ptype or "LOCK" in ptype:
-                canonical_phase_type = "ISOLATION"
-            elif "ACCES" in ptype or "ACCESS" in ptype:
-                canonical_phase_type = "ACCÈS"
-            elif "INTERVENT" in ptype:
-                canonical_phase_type = "INTERVENTION"
-            elif "RESTOR" in ptype or "DECON" in ptype:
-                canonical_phase_type = "RESTORATION"
-            else:
-                canonical_phase_type = ptype or "OPERATION"
-
-            clean_stages = []
-            for s_idx, s in enumerate(p.get("stages", []), start=1):
-                sid_str = str(s.get("stage_id") or f"S{p_idx}-{s_idx}").strip()
-                sseq = int(s.get("sequence", s_idx))
-                stitle = str(s.get("title") or f"Étape {s_idx}").strip()
-
-                clean_steps = []
-                for st_idx, st in enumerate(s.get("steps") or s.get("actions") or [], start=1):
-                    stid = str(st.get("step_id") or st.get("action_id") or f"A-{st_idx}").strip()
-                    stseq = int(st.get("sequence", st_idx))
-                    instruction = str(st.get("instruction") or st.get("description") or "").strip()
-                    crefs = [str(r).strip() for r in (st.get("component_refs") or [])]
-                    primary_comp = crefs[0] if crefs else ""
-
-                    v_raw = st.get("verification") or st.get("validation") or {}
-                    v_method = str(v_raw.get("method") or "visual_observation").strip()
-                    v_criteria = [str(cr).strip() for cr in (v_raw.get("criteria") or [])]
-                    v_evidence = [str(ev).strip() for ev in (v_raw.get("required_evidence") or [])]
-                    v_indeterminate = [str(ind).strip() for ind in (v_raw.get("indeterminate_when") or [])]
-                    v_prompts = [str(pr).strip() for pr in (v_raw.get("candidate_prompts") or v_raw.get("yolo_candidate_prompts") or [])]
-
-                    fallback_mode = str(v_raw.get("fallback_mode") or "none").strip()
-                    virtual_button = bool(v_raw.get("virtual_button", False))
-                    unity_hint = str(v_raw.get("unity_ui_hint") or "").strip()
-
-                    # Repli gracieux Unity pour les vérifications physiques
-                    if v_method in {"measurement", "sensor_signal", "not_defined"}:
-                        fallback_mode = "human_confirmation"
-                        virtual_button = True
-                        unity_hint = "Validation Humaine (Bouton Virtuel)"
-
-                    clean_verif = {
-                        "method": v_method,
-                        "criteria": v_criteria,
-                        "required_evidence": v_evidence,
-                        "instrument_refs": [str(ir).strip() for ir in (v_raw.get("instrument_refs") or [])],
-                        "indeterminate_when": v_indeterminate,
-                        "candidate_prompts": v_prompts,
-                        "fallback_mode": fallback_mode,
-                        "virtual_button": virtual_button,
-                        "unity_ui_hint": unity_hint,
-                    }
-
-                    clean_steps.append({
-                        "step_id": stid,
-                        "action_id": stid,
-                        "sequence": stseq,
-                        "instruction": instruction,
-                        "description": instruction,
-                        "component_refs": crefs,
-                        "primary_component": primary_comp,
-                        "vision_prompt": v_prompts[0] if v_prompts else (primary_comp.lower() if primary_comp else ""),
-                        "completion_check": v_criteria[0] if v_criteria else "",
-                        "expected_result": str(st.get("expected_result") or v_raw.get("expected_state") or "").strip(),
-                        "spatial_guide": None,
-                        "verification": clean_verif,
-                    })
-
-                clean_stages.append({
-                    "stage_id": s_idx,
-                    "stage_code": sid_str,
-                    "sequence": sseq,
-                    "title": stitle,
-                    "steps": clean_steps,
-                    "actions": clean_steps,
-                })
-
-            clean_phases.append({
-                "phase_id": pid,
-                "phase_type": canonical_phase_type,
-                "sequence": int(p.get("sequence", p_idx)),
-                "title": str(p.get("title") or f"Phase {p_idx}").strip(),
-                "description": str(p.get("description") or "").strip(),
-                "stages": clean_stages,
-            })
-
-        # 3. Clarifications HSE résolues intégrées
-        clean_clarifications = []
-        for q in raw_stages.get("clarifications_required") or []:
-            clean_clarifications.append({
-                "id": str(q.get("id") or ""),
-                "question": str(q.get("question") or ""),
-                "status": str(q.get("status") or ""),
-                "answer": str((q.get("resolution") or {}).get("answer") or ""),
-                "rationale": str((q.get("resolution") or {}).get("rationale") or ""),
-                "affected_step_ids": [str(x) for x in (q.get("affected_step_ids") or [])],
-                "related_component_ids": [str(x) for x in (q.get("related_component_ids") or [])],
-            })
-
-        enriched_workflow = dict(raw_stages)
-        enriched_workflow["schema_version"] = "2.0"
-        enriched_workflow["procedure_id"] = machine_id
-        enriched_workflow["machine_id"] = machine_id
-        enriched_workflow["machine_name"] = machine_name
-        enriched_workflow["maintenance_objective"] = maintenance_obj
-        enriched_workflow["expected_final_state"] = expected_final_state
-        enriched_workflow["components"] = clean_components
-        enriched_workflow["phases"] = clean_phases
-        enriched_workflow["clarifications_required"] = clean_clarifications
-
-        import json
-        payload = {
-            "procedure_id": machine_id,
-            "machine_id": machine_id,
-            "machine_name": machine_name,
-            "title": machine_name,
-            "version": version_id,
-            "procedure_version_id": version_id,
-            "schema_version": "2.0",
-            "objective": maintenance_obj,
-            "maintenance_objective": maintenance_obj,
-            "expected_final_state": expected_final_state,
-            "status": status,
-            "hse_approval_status": "approved" if str(status).upper() in {"PUBLISHED", "APPROVED"} else str(status).lower(),
+        workflow = normalize_workflow(raw_stages)
+        objective = workflow.get("maintenance_objective") or proc.get("maintenance_objective") or proc.get("objective") or ""
+        return {
+            "procedure_id": machine_id, "machine_id": machine_id,
+            "machine_name": machine_name, "title": machine_name,
+            "version": version_id, "procedure_version_id": version_id,
+            "schema_version": "2.0", "status": status,
             "created_by_hse": created_by_hse,
-            "components": clean_components,
-            "phases": clean_phases,
-            "clarifications_required": clean_clarifications,
-            "workflow_stages": enriched_workflow,
-            "workflow_json": json.dumps(enriched_workflow, ensure_ascii=False),
-            "anchors": [],
+            "hse_approval_status": "approved" if status.upper() in {"PUBLISHED", "APPROVED"} else status.lower(),
+            "objective": objective, "maintenance_objective": objective,
+            "expected_final_state": workflow.get("expected_final_state", ""),
+            "components": workflow.get("components", []),
+            "phases": workflow.get("phases", []),
+            "clarifications_required": workflow.get("clarifications_required", []),
+            "workflow_stages": workflow,
+            "workflow_json": json.dumps(raw_stages, ensure_ascii=False),
+            "anchors": _sanitize_anchors(raw_stages.get("anchors") or proc.get("anchors") or {}),
         }
-        return _clean_null_values(payload)
 
     lockout = _sanitize_stages(raw_stages.get("lockout", []))
     restoration = _sanitize_stages(raw_stages.get("restoration", []))

@@ -1,0 +1,536 @@
+{
+  "kind": "synthetic_training_sequence",
+  "real_intervention_evidence": false,
+  "application_tests_executed": false,
+  "images": [
+    {
+      "index": 1,
+      "step": "A01",
+      "phase": "preparation",
+      "moment": "avant",
+      "image": "images/01_A01_avant.jpg",
+      "fixture_key": "S04",
+      "synthetic": true,
+      "description": "État initial, lampe lumineuse, pile connectée et carter fermé.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "83582029fd84f07f3fcf944ae8453a8ca52eb3e4b05fe7988a2747de4cc23324",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 2,
+      "step": "A01",
+      "phase": "preparation",
+      "moment": "observation",
+      "image": "images/02_A01_observation.jpg",
+      "fixture_key": "T01",
+      "synthetic": true,
+      "description": "Observation des repères fixes ; aucun changement mécanique.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "88a371c2c3812b0661dc4334e5b330a1ed246e5e145615ee9c625833d50b04ee",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 3,
+      "step": "A01",
+      "phase": "preparation",
+      "moment": "apres",
+      "image": "images/03_A01_apres.jpg",
+      "fixture_key": "S04",
+      "synthetic": true,
+      "description": "État initial observé ; A-01 est une observation.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "83582029fd84f07f3fcf944ae8453a8ca52eb3e4b05fe7988a2747de4cc23324",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 4,
+      "step": "A02",
+      "phase": "consignation",
+      "moment": "avant",
+      "image": "images/04_A02_avant.jpg",
+      "fixture_key": "S04",
+      "synthetic": true,
+      "description": "Commande initiale ON, lampe lumineuse.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "83582029fd84f07f3fcf944ae8453a8ca52eb3e4b05fe7988a2747de4cc23324",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 5,
+      "step": "A02",
+      "phase": "consignation",
+      "moment": "geste",
+      "image": "images/05_A02_geste.jpg",
+      "fixture_key": "T02",
+      "synthetic": true,
+      "description": "Action sur la commande OFF.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "9d712b075d700de5cceb15e532ae24f0c6ea7afd8b918f3014b949e18df9a00b",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 6,
+      "step": "A02",
+      "phase": "consignation",
+      "moment": "apres",
+      "image": "images/06_A02_apres.jpg",
+      "fixture_key": "S01",
+      "synthetic": true,
+      "description": "Commande prévue OFF, lampe non lumineuse, pile encore connectée.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "d66614e095453489080ad9f4e908dbf6cc861b71a27530c25376fe9b5071243e",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 7,
+      "step": "A03",
+      "phase": "consignation",
+      "moment": "avant",
+      "image": "images/07_A03_avant.jpg",
+      "fixture_key": "S01",
+      "synthetic": true,
+      "description": "Pile dans le support, carter fermé.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "d66614e095453489080ad9f4e908dbf6cc861b71a27530c25376fe9b5071243e",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 8,
+      "step": "A03",
+      "phase": "consignation",
+      "moment": "geste",
+      "image": "images/08_A03_geste.jpg",
+      "fixture_key": "T03",
+      "synthetic": true,
+      "description": "Extraction de la pile ; séparation non encore certaine.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "0714400b7620f5984a7be3b88e0e6a3e12bb306f28d6310422b94301eb19ee7f",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 9,
+      "step": "A03",
+      "phase": "consignation",
+      "moment": "apres",
+      "image": "images/09_A03_apres.jpg",
+      "fixture_key": "E03",
+      "synthetic": true,
+      "description": "Pile tenue hors du support ; deux logements et réceptacle vides.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "54d3e262bffe8302c24d734fea321cebeeb419e69b2b83c7cc39743b442b0278",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 10,
+      "step": "A04",
+      "phase": "consignation",
+      "moment": "avant",
+      "image": "images/10_A04_avant.jpg",
+      "fixture_key": "E03",
+      "synthetic": true,
+      "description": "Pile tenue hors du support et hors du réceptacle.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "54d3e262bffe8302c24d734fea321cebeeb419e69b2b83c7cc39743b442b0278",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 11,
+      "step": "A04",
+      "phase": "consignation",
+      "moment": "geste",
+      "image": "images/11_A04_geste.jpg",
+      "fixture_key": "T04",
+      "synthetic": true,
+      "description": "Approche du réceptacle ; dépôt non encore terminé.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "8fed4f5d0e5c847707f29e7149fb6446701d59e6f25f197a2dc002b9f7738c14",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 12,
+      "step": "A04",
+      "phase": "consignation",
+      "moment": "apres",
+      "image": "images/12_A04_apres.jpg",
+      "fixture_key": "S02",
+      "synthetic": true,
+      "description": "Pile déposée dans le réceptacle ; support vide ; carter fermé.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "226107fad286e92f8d425ac7f717985006f62acd08f72cea9697ccdb8e656a0c",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 13,
+      "step": "A05",
+      "phase": "maintenance",
+      "moment": "avant",
+      "image": "images/13_A05_avant.jpg",
+      "fixture_key": "S02",
+      "synthetic": true,
+      "description": "Carter fermé, pile stockée.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "226107fad286e92f8d425ac7f717985006f62acd08f72cea9697ccdb8e656a0c",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 14,
+      "step": "A05",
+      "phase": "maintenance",
+      "moment": "geste",
+      "image": "images/14_A05_geste.jpg",
+      "fixture_key": "T05",
+      "synthetic": true,
+      "description": "Coulissement du carter ; état transitoire non valide comme position finale.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "bda987cc6a4b7ab5d076d9677996294cb18a8d409bf4f561daadb38c71f0d57b",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 2
+    },
+    {
+      "index": 15,
+      "step": "A05",
+      "phase": "maintenance",
+      "moment": "apres",
+      "image": "images/15_A05_apres.jpg",
+      "fixture_key": "S03",
+      "synthetic": true,
+      "description": "Carter ouvert candidat ; pile stockée et support vide.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "6998ca3aafe10de0ab56f32c7e2d85be271144a624c2b0ab94a53e1bcbe7e144",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 16,
+      "step": "A06",
+      "phase": "maintenance",
+      "moment": "avant",
+      "image": "images/16_A06_avant.jpg",
+      "fixture_key": "S03",
+      "synthetic": true,
+      "description": "Accès dégagé, lampe ancienne encore dans son support.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "6998ca3aafe10de0ab56f32c7e2d85be271144a624c2b0ab94a53e1bcbe7e144",
+      "automatic_step_success": false,
+      "human_confirmation_required": true,
+      "visual_revision": 1
+    },
+    {
+      "index": 17,
+      "step": "A06",
+      "phase": "maintenance",
+      "moment": "retrait",
+      "image": "images/17_A06_retrait.jpg",
+      "fixture_key": "T06a",
+      "synthetic": true,
+      "description": "Retrait de la petite ampoule au-dessus de sa douille courte ; pile toujours stockée.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "b18e5c31651b5fdfd63a8ea12e13bf24776021e940217524fcc27b4dd5b2b479",
+      "automatic_step_success": false,
+      "human_confirmation_required": true,
+      "visual_revision": 2
+    },
+    {
+      "index": 18,
+      "step": "A06",
+      "phase": "maintenance",
+      "moment": "douille_vide",
+      "image": "images/18_A06_douille_vide.jpg",
+      "fixture_key": "T06b",
+      "synthetic": true,
+      "description": "Douille vide et ancienne lampe retirée, tenue à côté.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "f2ce9c78778e29b812cb5c776e0de4e41305e503d1dc89b43e88f416cbc93c71",
+      "automatic_step_success": false,
+      "human_confirmation_required": true,
+      "visual_revision": 1
+    },
+    {
+      "index": 19,
+      "step": "A06",
+      "phase": "maintenance",
+      "moment": "installation",
+      "image": "images/19_A06_installation.jpg",
+      "fixture_key": "T06c",
+      "synthetic": true,
+      "description": "Présentation/insertion de la lampe de remplacement.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "9315993edcfe0111ff97cb555192638536de6a1530c56e850574cbcd25a02ec9",
+      "automatic_step_success": false,
+      "human_confirmation_required": true,
+      "visual_revision": 1
+    },
+    {
+      "index": 20,
+      "step": "A06",
+      "phase": "maintenance",
+      "moment": "apres_confirmation_humaine",
+      "image": "images/20_A06_apres_confirmation_humaine.jpg",
+      "fixture_key": "S03",
+      "synthetic": true,
+      "description": "Lampe en place : état final visuellement identique à avant. Remplacement confirmé par humain.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "6998ca3aafe10de0ab56f32c7e2d85be271144a624c2b0ab94a53e1bcbe7e144",
+      "automatic_step_success": false,
+      "human_confirmation_required": true,
+      "visual_revision": 1
+    },
+    {
+      "index": 21,
+      "step": "A07",
+      "phase": "remise_en_service",
+      "moment": "avant",
+      "image": "images/21_A07_avant.jpg",
+      "fixture_key": "S03",
+      "synthetic": true,
+      "description": "Carter ouvert candidat, pile stockée.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "6998ca3aafe10de0ab56f32c7e2d85be271144a624c2b0ab94a53e1bcbe7e144",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 22,
+      "step": "A07",
+      "phase": "remise_en_service",
+      "moment": "geste",
+      "image": "images/22_A07_geste.jpg",
+      "fixture_key": "T07",
+      "synthetic": true,
+      "description": "Coulissement vers fermeture, état transitoire.",
+      "dimensions_px": [
+        974,
+        1614
+      ],
+      "sha256": "eb9ab2677db871c11f4ea499bd0efe0287db913cb5748cb00a1d8e66e69070d3",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 23,
+      "step": "A07",
+      "phase": "remise_en_service",
+      "moment": "apres",
+      "image": "images/23_A07_apres.jpg",
+      "fixture_key": "S02",
+      "synthetic": true,
+      "description": "Carter fermé candidat, pile toujours stockée.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "226107fad286e92f8d425ac7f717985006f62acd08f72cea9697ccdb8e656a0c",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 24,
+      "step": "A08",
+      "phase": "remise_en_service",
+      "moment": "avant",
+      "image": "images/24_A08_avant.jpg",
+      "fixture_key": "S02",
+      "synthetic": true,
+      "description": "Support vide et pile dans réceptacle.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "226107fad286e92f8d425ac7f717985006f62acd08f72cea9697ccdb8e656a0c",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 25,
+      "step": "A08",
+      "phase": "remise_en_service",
+      "moment": "geste",
+      "image": "images/25_A08_geste.jpg",
+      "fixture_key": "T08",
+      "synthetic": true,
+      "description": "Insertion partielle de la pile, contact non confirmé.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "edeb59a88b6864d26aa4e472c3b7d0a78085f5be2d637c66fdd58b78316a4dc1",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 26,
+      "step": "A08",
+      "phase": "remise_en_service",
+      "moment": "apres",
+      "image": "images/26_A08_apres.jpg",
+      "fixture_key": "S01",
+      "synthetic": true,
+      "description": "Pile dans le logement fonctionnel, réceptacle vide, commande OFF.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "d66614e095453489080ad9f4e908dbf6cc861b71a27530c25376fe9b5071243e",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 27,
+      "step": "A09",
+      "phase": "remise_en_service",
+      "moment": "avant",
+      "image": "images/27_A09_avant.jpg",
+      "fixture_key": "S01",
+      "synthetic": true,
+      "description": "Pile connectée, commande OFF, lampe non lumineuse.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "d66614e095453489080ad9f4e908dbf6cc861b71a27530c25376fe9b5071243e",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 1
+    },
+    {
+      "index": 28,
+      "step": "A09",
+      "phase": "remise_en_service",
+      "moment": "geste",
+      "image": "images/28_A09_geste.jpg",
+      "fixture_key": "T09",
+      "synthetic": true,
+      "description": "Action vers ON ; observer commande et lumière séparément.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "b3cd1ff490142d0e994360a587f71e7d922b23d65c344fbd5bc51c2b2def8ab8",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 3
+    },
+    {
+      "index": 29,
+      "step": "A09",
+      "phase": "remise_en_service",
+      "moment": "apres",
+      "image": "images/29_A09_apres.jpg",
+      "fixture_key": "S04",
+      "synthetic": true,
+      "description": "Commande prévue ON et lampe lumineuse.",
+      "dimensions_px": [
+        975,
+        1614
+      ],
+      "sha256": "84f8b226cd71235e98c327e83778884f954d35e8a157313bedc5d59a46dd4ab0",
+      "automatic_step_success": false,
+      "human_confirmation_required": false,
+      "visual_revision": 3
+    }
+  ],
+  "revision": 3,
+  "review": "Revue visuelle des 16 vues distinctes couvrant les 29 positions de lecture ; retouches ciblées et contrôle de continuité.",
+  "corrected_images": [
+    "14_A05_geste.jpg",
+    "17_A06_retrait.jpg"
+  ],
+  "image_encoding": "JPEG quality 98, chroma subsampling disabled; dimensions preserved"
+}

@@ -61,5 +61,11 @@ STORAGE_PATH_REPORTS = "reports"
 # URL de base pour servir les fichiers statiques (PDF, images)
 BASE_URL = os.getenv("BASE_URL", "http://127.0.0.1:8000")
 
+# Explicit server configuration: no key-based provider or model selection.
+FIELD_VISION_PROVIDER = os.getenv("FIELD_VISION_PROVIDER", "").strip().lower()
+FIELD_VISION_MODEL = os.getenv("GEMINI_MODEL", "").strip()
+FIELD_VISION_TIMEOUT = float(os.getenv("FIELD_VISION_TIMEOUT", "90"))
+FIELD_VISION_MIN_CONFIDENCE = float(os.getenv("FIELD_VISION_MIN_CONFIDENCE", "0.8"))
+
 # CORS : autorise toutes les origines pour le dev local
 CORS_ORIGINS = ["*"]

@@ -33,6 +33,7 @@ from app.services.procedure_service import update_procedure_draft
 from app.services.workflow_validation import validate_workflow
 from app.services.semantic_judge import verify_semantic_grounding, verify_all_facts_grounding
 from app.schemas_workflow import ProcedureDraftV2
+from app.services.phase_policy import normalize_draft_phases
 
 MAX_PDF_BYTES = 20 * 1024 * 1024
 MAX_PDF_PAGES = 100
@@ -233,16 +234,18 @@ CRITICAL QUALITY & CONCISION GUIDELINES:
    - 'human_confirmation': manual physical checks.
    - 'measurement': measuring instruments (multimeter, gauge).
    - 'sensor_signal': automated sensors.
-   Always provide explicit criteria and at least one 'indeterminate_when' condition (e.g., 'Vue masquée ou éclairage insuffisant', 'Aiguille illisible').
+   Maintenance operations (accessing, replacing, repairing a component) ALWAYS use human_confirmation as their normal validation, not a camera check or an override. Their acceptance criteria describe the completed work; camera cues belong to guidance only.
+   Group actions by meaning into preparation, consignation (stop, separate, store source), maintenance (access and repair), restoration (close, reconnect, restart). Never classify a replacement as lockout. Do not use step IDs to classify phases.
+   For visual methods provide explicit observable criteria and at least one 'indeterminate_when' condition. Do not manufacture camera criteria for human confirmation.
 5. CLARIFICATIONS: Formulate short, focused questions with clear safety impact. Link them only to genuinely affected steps; do not link procedure-wide questions to all steps arbitrarily.
 6. COMPONENT IDENTIFICATION & PHYSICAL SIGNATURES (MANDATORY):
    - FORBIDDEN: NEVER use 2D image coordinates or relative layout words ('en haut', 'en bas', 'à gauche', 'à droite', 'visible') as signatures.
    - Examine both text AND figures to extract concrete physical signatures:
-     * Invariant features: symbol (e.g. circle with cross ⊗ for C06 Lampe), pictogram (padlock on C04), chassis markings (e.g. 'ON'/'OFF' for C01, '+/-' and 'X' for C03 slots, solid circle and empty circle for C07), local geometry (white square on C05 carter, cylindrical body for C02).
-     * Verifiable states: separate identifying the component from verifying its state (e.g. C05 carter CLOSED = white square aligned with solid black circle C07; OPEN = aligned with empty circle).
+     * Invariant features: extract the actual permanent markings, symbols, pictograms and local geometry from THIS document only. Never reuse component identifiers, layouts or state conventions from previous equipment.
+     * Verifiable states: separate identifying the component from verifying its state. A pictogram, an alignment or an ON/OFF marking is not proof of a safety function. An unconfirmed correspondence in the document stays unconfirmed and requires HSE clarification; do not convert it into an established rule.
      * Missing markers: NEVER invent an anchor or direction. If information is missing or contradictory, set clarification_needed=true and emit a clarification linked to that component.
 7. DETECTOR PROMPTS & SAFETY CONSTRAINTS:
-   - Candidate detector prompts must be concrete physical identifiers (e.g. 'switch_c01', 'guard_c05', 'battery_c02').
+   - Candidate detector prompts must be concrete physical identifiers derived only from this document's components.
    - Absence of detection is ALWAYS indeterminate and must NEVER validate a step automatically. Set supported_by_unity=false unless full automated state verification is proven.
 
 Identify equipment, components, relations, every documented energy source, control/protection states, maintenance objectives, unknowns and contradictions. Build only phases and actions supported by the objective and document. Separate document-backed actions (basis='documented_procedure') from proposals (basis='reasoning_to_review'). For every textual fact, give the quote as read and page. Output only JSON matching the response schema."""
@@ -764,7 +767,7 @@ def _normalize_and_validate(result: Dict[str, Any], extracted: Dict[str, Any], d
                 step["evidence_refs"] = [{"source_id": source_id, "page": p} for p in pages_in_document(step.get("source_pages"))]
                 step["source_pages"] = pages_in_document(step.get("source_pages"))
                 step["expected_result"] = str(step.get("expected_result") or "")
-                validation = step.get("validation") if isinstance(step.get("validation"), dict) else {}
+                validation = step.get("verification") or step.get("validation") or {}
                 raw_method = str(validation.get("method", "")).strip().lower()
                 method_alias = {
                     "vision_detection": "visual_observation",
@@ -865,6 +868,7 @@ def _normalize_and_validate(result: Dict[str, Any], extracted: Dict[str, Any], d
         "review": {"status": "draft_pending_review", "approved": False},
         "_generation_metadata": {"generator_version": f"document-pdf-{DOCUMENT_GENERATION_PROVIDER}-v2", "source_type": "pdf_extracted", "provider": DOCUMENT_GENERATION_PROVIDER},
     }
+    workflow = normalize_draft_phases(workflow)
     workflow = ProcedureDraftV2.model_validate(workflow).model_dump(mode="json")
     workflow["validation_diagnostics"] = validate_workflow(workflow)
     if extracted["text_characters"] > MAX_PROMPT_TEXT_CHARS:

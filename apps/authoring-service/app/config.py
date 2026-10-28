@@ -68,12 +68,11 @@ GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 # The document-generation flow uses one server-selected multimodal model.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()
 
-# PDF authoring defaults to Groq's multimodal Qwen model when configured.
-# Gemini remains available as an explicit server-side alternative.
+# Provider selection is explicit; the presence of a key never changes it.
 DOCUMENT_GENERATION_PROVIDER = os.getenv(
-    "DOCUMENT_GENERATION_PROVIDER", "groq" if GROQ_API_KEY else "gemini"
+    "DOCUMENT_GENERATION_PROVIDER", ""
 ).strip().lower()
 GROQ_DOCUMENT_MODEL = os.getenv("GROQ_DOCUMENT_MODEL", "qwen/qwen3.8-27b")
 PROVIDER_REQUEST_TIMEOUT_SECONDS = float(os.getenv("PROVIDER_REQUEST_TIMEOUT_SECONDS", "150"))

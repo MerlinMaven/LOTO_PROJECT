@@ -11,7 +11,10 @@ Contrat figé Unity (ne pas modifier sans recompiler l'application Quest) :
 from __future__ import annotations
 
 import json
-from datetime import datetime
+import hashlib
+import httpx
+from uuid import uuid4
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from fastapi.routing import APIRouter
@@ -27,12 +30,156 @@ from app.models import (
     ActionValidation,
     CloseIntervention,
     StartIntervention,
+    PreviewValidation,
+    HumanConfirmation,
+    TestConfirmation,
+    GuidanceLocalization,
 )
 from app.services import pdf as pdf_service
 from app.services import storage as storage_service
 from app.services import vision as vision_service
+from app.services import step_vision
+from app.services import step_guidance
+from app.services.signatures import operator_signature, hse_signature_for_intervention
+from app.services.workflow import verification_context
 
 router = APIRouter()
+
+
+@router.post("/guidance/locate-step")
+async def locate_step(data: GuidanceLocalization):
+    """Locate a step's components without evaluating, saving or advancing it."""
+    if data.test_mode:
+        if database.db is None:
+            raise HTTPException(status_code=503, detail="Base de données indisponible.")
+        rows = database.db.table("procedure_versions").select("*").eq("id", data.version_id).execute().data
+        if (not rows or rows[0].get("procedure_id") != data.machine_id
+                or rows[0].get("status") not in {"published", "superseded", "draft_pending_review", "approved"}):
+            raise HTTPException(status_code=409, detail="Révision de guidage introuvable.")
+        workflow = rows[0]["workflow_definition"]
+        try:
+            if isinstance(workflow, str):
+                workflow = json.loads(workflow)
+            context = verification_context(workflow, data.action_id, data.stage_id, data.stage_code)
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise HTTPException(status_code=422, detail="Contexte de guidage invalide.") from exc
+    else:
+        intervention, context = _intervention_context(data)
+        if (intervention["machine_id"] != data.machine_id
+                or context["procedure_version_id"] != data.version_id):
+            raise HTTPException(status_code=409, detail="Le guidage ne correspond pas à la révision de l'intervention.")
+    image, content = _camera_image(data.image_base64)
+    try:
+        targets = await step_guidance.locate_components(image, context)
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
+        raise HTTPException(status_code=503, detail="Localisation IA indisponible.") from exc
+    return {"guidance_only": True, "verified": False, "test_mode": data.test_mode,
+            "request_id": data.request_id, "action_id": data.action_id,
+            "procedure_version_id": data.version_id, "image_sha256": hashlib.sha256(content).hexdigest(),
+            "image_width": image.shape[1], "image_height": image.shape[0], "targets": targets}
+
+
+@router.post("/tests/verify-step")
+async def preview_step(data: PreviewValidation):
+    """Historical image test: production evaluator, no intervention, evidence or audit writes."""
+    if database.db is None:
+        raise HTTPException(status_code=503, detail="Base de données indisponible.")
+    rows = database.db.table("procedure_versions").select("*").eq("id", data.version_id).execute().data
+    if (not rows or rows[0].get("procedure_id") != data.machine_id
+            or rows[0].get("status") not in {"published", "superseded", "draft_pending_review", "approved"}):
+        raise HTTPException(status_code=409, detail="Révision de test introuvable pour cet équipement.")
+    workflow = rows[0]["workflow_definition"]
+    if isinstance(workflow, str):
+        workflow = json.loads(workflow)
+    try:
+        context = verification_context(workflow, data.action_id, data.stage_id, data.stage_code)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    image, content = _camera_image(data.image_base64)
+    result = await step_vision.evaluate_step(image, context)
+    return {**result, "test_mode": True, "revision_status": rows[0]["status"], "request_id": data.request_id, "action_id": data.action_id,
+            "procedure_version_id": data.version_id, "image_sha256": hashlib.sha256(content).hexdigest(),
+            "image_width": image.shape[1], "image_height": image.shape[0]}
+
+
+def _human_result(context, data):
+    if context["verification"].get("method") != "human_confirmation":
+        raise HTTPException(status_code=409, detail="Cette étape requiert une autre méthode de validation.")
+    if not data.confirmed:
+        raise HTTPException(status_code=422, detail="Confirmez explicitement la réalisation de l'opération.")
+    return {"verified": True, "outcome": "human_confirmed", "evaluation_mode": "human_confirmation",
+            "message": "Opération confirmée par l'opérateur.", "observed_state": "Attestation humaine ; aucune inférence visuelle.",
+            "request_id": data.request_id, "action_id": data.action_id, "targets": [],
+            "execution_phase": context["execution_phase"], "validation_method": "human_confirmation"}
+
+
+@router.post("/interventions/confirm-step")
+async def confirm_step(data: HumanConfirmation):
+    intervention, context = _intervention_context(data)
+    result = _human_result(context, data)
+    logs = intervention.get("logs") or []
+    # Retransmission of the same attestation must not create a second audit event.
+    if not any(log.get("request_id") == data.request_id and log.get("type") == "human_confirmation" for log in logs):
+        logs.append({"timestamp": datetime.now().isoformat(), "stage_id": data.stage_id,
+            "stage_code": context["stage_code"], "action_id": data.action_id, "request_id": data.request_id,
+            "action_description": context["instruction"], "type": "human_confirmation", "success": True,
+            "execution_phase": context["execution_phase"], "verification_method": "human_confirmation",
+            "operator_name": intervention.get("operator_name", ""),
+            "details": data.statement.strip() or "L'opérateur confirme avoir réalisé l'opération.",
+            "verification_context": context})
+        database.db.table("interventions").update({"logs": logs}).eq("id", data.intervention_id).execute()
+    return {**result, "procedure_version_id": context["procedure_version_id"]}
+
+
+@router.post("/tests/confirm-step")
+async def test_confirm_step(data: TestConfirmation):
+    if database.db is None:
+        raise HTTPException(status_code=503, detail="Base de données indisponible.")
+    rows = database.db.table("procedure_versions").select("*").eq("id", data.version_id).execute().data
+    if not rows or rows[0].get("procedure_id") != data.machine_id:
+        raise HTTPException(status_code=409, detail="Révision de test introuvable.")
+    workflow = rows[0]["workflow_definition"]
+    if isinstance(workflow, str): workflow = json.loads(workflow)
+    try: context = verification_context(workflow, data.action_id, data.stage_id, data.stage_code)
+    except ValueError as exc: raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {**_human_result(context, data), "test_mode": True, "procedure_version_id": data.version_id,
+            "revision_status": rows[0]["status"]}
+
+
+def _intervention_context(data):
+    if database.db is None:
+        raise HTTPException(status_code=503, detail="Base de données indisponible.")
+    rows = database.db.table("interventions").select("*").eq("id", data.intervention_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Intervention non trouvée.")
+    intervention = rows[0]
+    if intervention.get("status") != "IN_PROGRESS":
+        raise HTTPException(status_code=409, detail="Cette intervention n'est plus en cours.")
+    revisions = database.db.table("procedure_versions").select("*").eq("id", intervention.get("procedure_version_id")).execute().data
+    if not revisions or revisions[0].get("procedure_id") != intervention["machine_id"]:
+        raise HTTPException(status_code=409, detail="Révision épinglée absente ou liée à un autre équipement.")
+    revision = revisions[0]
+    if revision.get("status") not in {"published", "superseded"}:
+        raise HTTPException(status_code=409, detail="La révision épinglée n'a pas été publiée.")
+    workflow = revision.get("workflow_definition") or {}
+    try:
+        if isinstance(workflow, str):
+            workflow = json.loads(workflow)
+        context = verification_context(workflow, data.action_id, data.stage_id, data.stage_code)
+    except (ValueError, TypeError, AttributeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    context["procedure_version_id"] = revision["id"]
+    return intervention, context
+
+
+def _camera_image(encoded):
+    try:
+        image, content = vision_service.decode_base64_image(encoded)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=f"Image invalide : {exc}") from exc
+    if min(image.shape[:2]) < 32:
+        raise HTTPException(status_code=400, detail="Image trop petite pour être exploitée.")
+    return image, content
 
 
 @router.post("/interventions/start")
@@ -66,7 +213,8 @@ async def start_intervention(data: StartIntervention):
         version_res = database.db.table("procedure_versions").select("*").eq("id", version_id).execute()
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Le registre des révisions publiées est indisponible.") from exc
-    if not version_res.data or version_res.data[0].get("status") != "published":
+    if (not version_res.data or version_res.data[0].get("status") != "published"
+            or version_res.data[0].get("procedure_id") != data.machine_id):
         raise HTTPException(status_code=409, detail="La révision active n'est pas publiée.")
 
     try:
@@ -86,141 +234,49 @@ async def start_intervention(data: StartIntervention):
 
 @router.post("/interventions/validate-step")
 async def validate_step(data: ActionValidation):
-    """Valide une étape visuellement avec YOLO-World à partir de la capture AR."""
-    if database.db is None:
-        raise HTTPException(status_code=500, detail="Base de données indisponible.")
-
-    try:
-        img, img_bytes = vision_service.decode_base64_image(data.image_base64)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Image base64 invalide : {exc}") from exc
-
-    image_height, image_width = img.shape[:2]
-    if image_width < 32 or image_height < 32:
-        raise HTTPException(status_code=400, detail="L'image reçue est trop petite pour être exploitée.")
-
-    try:
-        candidate_detected, confidence = vision_service.run_detection(img, data.vision_prompt)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-
-    filename = f"{STORAGE_PATH_EVIDENCE}/{data.intervention_id}_stage_{data.stage_id}_act_{data.action_id}.jpg"
-    img_url = storage_service.upload_file(img_bytes, filename)
-    print(f"[CAMERA] Image réelle reçue et enregistrée: {image_width}x{image_height} -> {img_url}")
-
-    int_res = database.db.table("interventions").select("*").eq("id", data.intervention_id).execute()
-    if not int_res.data:
-        raise HTTPException(status_code=404, detail="Intervention non trouvée.")
-
-    intervention = int_res.data[0]
+    """Evaluate the camera frame using only the intervention's published revision."""
+    _, context = _intervention_context(data)
+    image, content = _camera_image(data.image_base64)
+    result = await step_vision.evaluate_step(image, context)
+    # Re-read after inference so a closed intervention cannot receive a late success.
+    intervention, _ = _intervention_context(data)
+    filename = f"{STORAGE_PATH_EVIDENCE}/{uuid4().hex}.jpg"
+    image_url = storage_service.upload_file(content, filename)
     logs = intervention.get("logs") or []
-
     logs.append({
-        "timestamp": datetime.now().isoformat(),
-        "stage_id": data.stage_id,
-        "action_id": data.action_id,
-        "action_description": f"Candidate object check: {data.vision_prompt}",
-        "type": "visual_candidate_detection",
-        "success": False,
-        "candidate_detected": candidate_detected,
-        "image_url": img_url,
-        "details": (f"Candidate detected (score {confidence:.2f}); state not verified, operator confirmation required." if confidence is not None else "No candidate detected; physical absence is not established."),
+        "timestamp": datetime.now().isoformat(), "stage_id": data.stage_id,
+        "stage_code": context["stage_code"], "action_id": data.action_id,
+        "action_description": context["instruction"], "type": "contextual_vision",
+        "success": result["verified"], "image_url": image_url,
+        "details": result["message"], "verification_context": context,
+        "execution_phase": context["execution_phase"], "verification_method": context["verification"].get("method"),
+        "observation": result,
     })
-
     database.db.table("interventions").update({"logs": logs}).eq("id", data.intervention_id).execute()
-
-    return {
-        "verified": False,
-        "candidate_detected": candidate_detected,
-        "message": "Candidate detection recorded; equipment state remains unverified.",
-        "image_url": img_url,
-        "image_width": image_width,
-        "image_height": image_height,
-    }
-
+    return {**result, "request_id": data.request_id, "action_id": data.action_id,
+            "procedure_version_id": context["procedure_version_id"], "image_sha256": hashlib.sha256(content).hexdigest(),
+            "image_url": image_url, "image_width": image.shape[1], "image_height": image.shape[0]}
 
 
 @router.post("/interventions/override-step")
 async def override_step(data: ActionOverride):
-    """Valide manuellement une étape en cas de mode dégradé avec photo de preuve."""
-    if database.db is None:
-        raise HTTPException(status_code=500, detail="Base de données indisponible.")
+    """Explicit, photographed exception to the published verification method."""
+    intervention, context = _intervention_context(data)
     if not data.reason.strip():
-        raise HTTPException(status_code=422, detail="Une justification opérateur est requise.")
-
-    try:
-        image, img_bytes = vision_service.decode_base64_image(data.image_base64)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Image base64 invalide : {exc}") from exc
-
-    image_height, image_width = image.shape[:2]
-    if image_width < 32 or image_height < 32:
-        raise HTTPException(status_code=400, detail="L'image reçue est trop petite pour être exploitable.")
-
-    int_res = database.db.table("interventions").select("*").eq("id", data.intervention_id).execute()
-    if not int_res.data:
-        raise HTTPException(status_code=404, detail="Intervention non trouvée.")
-    intervention = int_res.data[0]
-    if intervention.get("status") != "IN_PROGRESS":
-        raise HTTPException(status_code=409, detail="Cette intervention n'est plus en cours.")
-    pinned_version_id = intervention.get("procedure_version_id")
-    if pinned_version_id:
-        revision_res = database.db.table("procedure_versions").select("*").eq("id", pinned_version_id).execute()
-        if not revision_res.data:
-            raise HTTPException(status_code=409, detail="La révision épinglée de l'intervention est introuvable.")
-        revision = revision_res.data[0]
-        workflow = revision.get("workflow_definition") or {}
-        if isinstance(workflow, str):
-            try:
-                workflow = json.loads(workflow)
-            except ValueError as exc:
-                raise HTTPException(status_code=409, detail="La révision épinglée contient un JSON invalide.") from exc
-        if workflow.get("schema_version") == "2.0":
-            expected_method = None
-            for phase in workflow.get("phases", []):
-                for stage in phase.get("stages", []):
-                    for step in stage.get("steps", []):
-                        if step.get("step_id") == data.action_id:
-                            expected_method = (step.get("verification") or {}).get("method")
-                            break
-            # Support des méthodes avec repli gracieux Unity (Validation Humaine / Bouton Virtuel)
-            supported_methods = {"visual_observation", "human_confirmation", "measurement", "sensor_signal"}
-            if expected_method not in supported_methods:
-                raise HTTPException(status_code=422, detail="Cette méthode n'est pas disponible pour confirmation Unity.")
-            allowed_inputs = {expected_method, "human_confirmation", "virtual_button"}
-            if data.verification_method not in allowed_inputs:
-                raise HTTPException(status_code=409, detail="La méthode de vérification ne correspond pas à la révision épinglée.")
-
-    filename = (
-        f"{STORAGE_PATH_EVIDENCE}/{data.intervention_id}_stage_{data.stage_id}"
-        f"_act_{data.action_id}_override.jpg"
-    )
-    img_url = storage_service.upload_file(img_bytes, filename)
-    print(f"[CAMERA] Image de dérogation enregistrée: {image_width}x{image_height} -> {img_url}")
-
+        raise HTTPException(status_code=422, detail="Un motif de derogation est obligatoire.")
+    _, content = _camera_image(data.image_base64)
+    image_url = storage_service.upload_file(content, f"{STORAGE_PATH_EVIDENCE}/{uuid4().hex}_override.jpg")
     logs = intervention.get("logs") or []
-
     logs.append({
-        "timestamp": datetime.now().isoformat(),
-        "stage_id": data.stage_id,
-        "action_id": data.action_id,
-        "action_description": "Confirmation opérateur avec preuve",
-        "type": "operator_confirmation",
-        "verification_method": data.verification_method or "legacy_manual_confirmation",
-        "success": True,
-        "image_url": img_url,
-        "details": f"Raison de la dérogation : {data.reason}",
+        "timestamp": datetime.now().isoformat(), "stage_id": data.stage_id,
+        "stage_code": context["stage_code"], "action_id": data.action_id,
+        "action_description": context["instruction"], "type": "operator_override",
+        "verification_method": context["verification"].get("method", ""),
+        "success": True, "image_url": image_url,
+        "details": data.reason.strip(), "verification_context": context,
     })
-
     database.db.table("interventions").update({"logs": logs}).eq("id", data.intervention_id).execute()
-
-    return {
-        "verified": True,
-        "message": "Dérogation manuelle enregistrée avec succès.",
-        "image_url": img_url,
-    }
+    return {"verified": True, "message": "Derogation manuelle enregistree avec sa preuve.", "image_url": image_url}
 
 
 @router.post("/interventions/close")
@@ -249,6 +305,20 @@ async def close_intervention(data: CloseIntervention):
     except Exception as exc:
         print(f"[WARN] Erreur de décodage signature : {exc}")
 
+    completed_at = datetime.now(timezone.utc).isoformat()
+    signature_record, sig_bytes = operator_signature(intervention, completed_at, sig_bytes)
+    if not sig_url:
+        sig_filename = f"{STORAGE_PATH_SIGNATURES}/{data.intervention_id}_signature.png"
+        sig_url = storage_service.upload_file(sig_bytes, sig_filename, content_type="image/png")
+    signature_record["image_url"] = sig_url
+    intervention["completed_at"] = completed_at
+    intervention["operator_signature"] = signature_record
+    intervention["hse_signature"] = hse_signature_for_intervention(database.db, intervention)
+    logs = [log for log in (intervention.get("logs") or []) if log.get("type") != "operator_signature"]
+    logs.append({"type": "operator_signature", "timestamp": completed_at, "signature": signature_record,
+                 "success": True, "action_description": "Signature et clôture de l’intervention"})
+    intervention["logs"] = logs
+
     # Génération et sauvegarde du PDF
     pdf_bytes = pdf_service.generate_audit_report(intervention, machine_name, sig_bytes)
     pdf_filename = f"{STORAGE_PATH_REPORTS}/Audit_Report_{data.intervention_id}.pdf"
@@ -259,7 +329,8 @@ async def close_intervention(data: CloseIntervention):
         "status": "COMPLETED",
         "signature_url": sig_url,
         "pdf_report_url": pdf_url,
-        "completed_at": datetime.now().isoformat(),
+        "completed_at": completed_at,
+        "logs": logs,
     }).eq("id", data.intervention_id).execute()
 
     return {

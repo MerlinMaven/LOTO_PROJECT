@@ -71,7 +71,7 @@ class WorkflowValidationTests(unittest.TestCase):
         steps = {step["step_id"]: step for _, _, step in iter_steps(draft)}
         self.assertEqual(steps["step-measure"]["review_readiness"], "blocked")
         self.assertEqual(steps["step-isolate"]["review_readiness"], "reviewable")
-        draft["clarifications_required"][0].update({"status": "resolved", "affected_steps_reviewed": True, "resolution": {"answer": "Drive type confirmed", "rationale": "Checked against revised equipment record"}})
+        draft["clarifications_required"][0].update({"status": "resolved", "affected_steps_reviewed": True, "resolution": {"answer": "Drive type confirmed", "rationale": "Checked against revised equipment record", "answer_complete": True}})
         apply_clarification_impact(draft)
         self.assertEqual(steps["step-measure"]["review_readiness"], "reviewable")
 
@@ -176,6 +176,37 @@ class WorkflowValidationTests(unittest.TestCase):
         diagnostics = {item["code"] for item in first["validation_diagnostics"]}
         self.assertIn("EQUIPMENT_ID_UNCONFIRMED", diagnostics)
         self.assertTrue(any("identifiant unique" in item["question"] for item in first["clarifications_required"]))
+
+
+
+
+class SemanticProviderTests(unittest.IsolatedAsyncioTestCase):
+    async def check_provider(self, status):
+        import json
+        import httpx
+        from unittest.mock import patch
+        from app.services import semantic_judge as judge
+        requests = []
+        def respond(request):
+            requests.append(request)
+            self.assertEqual(request.url.host, "generativelanguage.googleapis.com")
+            self.assertIn("/models/chosen-model:generateContent", request.url.path)
+            self.assertEqual(json.loads(request.content)["generationConfig"]["temperature"], 0)
+            return httpx.Response(status, json={"candidates": [{"content": {"parts": [{"text": '{"is_supported": true}'}]}}]})
+        client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        with patch.object(judge, "DOCUMENT_GENERATION_PROVIDER", "gemini"), patch.object(judge, "GEMINI_API_KEY", "synthetic-key"), patch.object(judge, "GEMINI_MODEL", "chosen-model"), patch.object(judge.httpx, "AsyncClient", return_value=client):
+            if status == 200:
+                self.assertTrue(await judge.verify_semantic_grounding("synthetic source", "synthetic claim"))
+            else:
+                with self.assertRaises(httpx.HTTPStatusError):
+                    await judge.verify_semantic_grounding("synthetic source", "synthetic claim")
+        self.assertEqual(len(requests), 1)
+
+    async def test_selected_model_used_without_groq_preference(self):
+        await self.check_provider(200)
+
+    async def test_api_error_propagates_without_heuristic_approval(self):
+        await self.check_provider(403)
 
 
 if __name__ == "__main__":

@@ -17,12 +17,50 @@ class StartIntervention(BaseModel):
 
 
 class ActionValidation(BaseModel):
-    """POST /interventions/validate-step — Vérification visuelle YOLO-World."""
+    """POST /interventions/validate-step — Capture évaluée avec le contexte HSE épinglé."""
     intervention_id: str
     stage_id: int
     action_id: str
     image_base64: str
-    vision_prompt: str
+    vision_prompt: str = ""  # Legacy hint; authoritative context is resolved on the server.
+    stage_code: str = ""
+    request_id: str = ""
+
+
+class PreviewValidation(BaseModel):
+    machine_id: str
+    version_id: str
+    stage_id: int
+    stage_code: str = ""
+    action_id: str
+    image_base64: str
+    request_id: str
+
+
+class HumanConfirmation(BaseModel):
+    intervention_id: str
+    stage_id: int
+    action_id: str
+    stage_code: str = ""
+    request_id: str
+    confirmed: bool
+    statement: str = ""
+
+
+class GuidanceLocalization(PreviewValidation):
+    intervention_id: str = ""
+    test_mode: bool = False
+
+
+class TestConfirmation(BaseModel):
+    machine_id: str
+    version_id: str
+    stage_id: int
+    action_id: str
+    stage_code: str = ""
+    request_id: str
+    confirmed: bool
+    statement: str = ""
 
 
 class ActionOverride(BaseModel):
@@ -33,6 +71,7 @@ class ActionOverride(BaseModel):
     image_base64: str
     reason: str
     verification_method: Optional[str] = None
+    stage_code: str = ""
 
 
 class CloseIntervention(BaseModel):

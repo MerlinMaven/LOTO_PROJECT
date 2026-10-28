@@ -45,7 +45,9 @@ def apply_clarification_impact(workflow: dict[str, Any]) -> dict[str, Any]:
         for question in impacted:
             resolution = question.get("resolution") if isinstance(question.get("resolution"), dict) else {}
             ans = str(resolution.get("answer", "")).strip()
-            if question.get("status") != "resolved" or not ans:
+            if (question.get("status") != "resolved" or not ans
+                    or resolution.get("answer_complete") is not True
+                    or question.get("affected_steps_reviewed") is not True):
                 blocking.append(str(question.get("id", "")))
         if step.get("unresolved_conditions"):
             blocking.extend(f"condition:{index + 1}" for index, value in enumerate(step["unresolved_conditions"]) if value)
@@ -181,6 +183,9 @@ def validate_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
                     if not isinstance(evidence, dict) or evidence.get("source_id") not in source_ids:
                         add("UNKNOWN_SOURCE_REF", "schema", "Référence de preuve sans document source associé.", entity=sid)
                 verification = step.get("verification") or {}
+                if any(str(c).startswith("Critère validé :") for c in verification.get("criteria", [])):
+                    add("CLARIFICATION_COPIED_AS_CRITERION", "missing_information",
+                        "Une réponse HSE a été recopiée comme critère. Définir un critère observable spécifique à cette action.", "blocking", sid)
                 method = verification.get("method", "not_defined")
                 if method not in KNOWN_VERIFICATION_METHODS:
                     add("VERIFICATION_METHOD_UNKNOWN", "execution_capability", f"Méthode de vérification non prise en charge par le client Unity : {method}.", "blocking", sid)
@@ -194,7 +199,7 @@ def validate_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
                         verification["fallback_mode"] = "human_confirmation"
                         verification["virtual_button"] = True
                         verification["unity_ui_hint"] = "Validation Humaine (Bouton Virtuel)"
-                if method != "not_defined" and not verification.get("criteria"):
+                if method not in {"not_defined", "human_confirmation"} and not verification.get("criteria"):
                     add("VERIFICATION_CRITERIA_REQUIRED", "missing_information", "Critère vérifiable à préciser.", "blocking", sid)
                 if method in {"visual_observation", "measurement", "sensor_signal", "combined_evidence"} and not verification.get("indeterminate_when"):
                     add("INDETERMINATE_RULE_REQUIRED", "system_limit", "Préciser quand la preuve ne permet pas de conclure.", "blocking", sid)
@@ -245,6 +250,10 @@ def validate_workflow(workflow: dict[str, Any]) -> list[dict[str, Any]]:
             ans = str(resolution.get("answer", "")).strip() if isinstance(resolution, dict) else ""
             if not ans:
                 add("CLARIFICATION_RESOLUTION_INCOMPLETE", "missing_information", "Une réponse est requise.", "blocking", str(clarification.get("id", "")))
+            if (not isinstance(resolution, dict) or resolution.get("answer_complete") is not True
+                    or clarification.get("affected_steps_reviewed") is not True):
+                add("CLARIFICATION_REVIEW_INCOMPLETE", "missing_information",
+                    "Confirmer une réponse complète et la revue séparée des critères des étapes concernées.", "blocking", str(clarification.get("id", "")))
         for sid in clarification.get("affected_step_ids", []):
             if sid not in steps:
                 add("CLARIFICATION_UNKNOWN_STEP", "schema", f"La clarification référence une action inconnue : {sid}.", entity=str(clarification.get("id", "")))

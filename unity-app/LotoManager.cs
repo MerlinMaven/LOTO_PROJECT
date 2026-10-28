@@ -20,6 +20,45 @@ public class LotoManager : MonoBehaviour
     public int currentStageIndex = 0;
     public int currentActionIndex = 0;
 
+    private bool validationPending;
+    private bool maintenancePresented;
+    private bool maintenanceVisible;
+    private int validationGeneration;
+    public bool TestMode { get; private set; }
+    public bool IsValidationPending => validationPending;
+
+    public void InvalidateValidation()
+    {
+        validationGeneration++;
+        StopAllCoroutines();
+        validationPending = false;
+        uiController.SetValidationBusy(false);
+        uiController.ClearFrameTargets();
+        ClearHologramGuide();
+    }
+
+    public bool SelectTestAction(string id)
+    {
+        var phases = currentProcedure?.workflow_stages?.phases;
+        if (phases == null) return false;
+        for (int p = 0; p < phases.Length; p++)
+            for (int s = 0; s < phases[p].stages.Length; s++)
+            {
+                var steps = phases[p].stages[s].steps ?? phases[p].stages[s].actions;
+                for (int a = 0; a < steps.Length; a++)
+                    if (steps[a].Id == id)
+                    {
+                        InvalidateValidation();
+                        TestMode = true;
+                        currentPhaseIndex = p; currentStageIndex = s; currentActionIndex = a;
+                        uiController.ShowStepScreen(); uiController.UpdateUIForCurrentStep();
+                        UpdateHologramGuide();
+                        return true;
+                    }
+            }
+        return false;
+    }
+
     private void Awake()
     {
         if (Instance == null)
@@ -40,17 +79,14 @@ public class LotoManager : MonoBehaviour
     // Called by SmartLOTOClient once the procedure JSON is fetched
     public void InitializeProcedure(SmartLOTOClient.LOTOProcedure procedure)
     {
-        currentProcedure = procedure;
+        validationGeneration++;
+        TestMode = uiController.ImageTestMode;
+        StopAllCoroutines();
+        currentProcedure = SmartLOTOClient.NormalizeProcedure(procedure);
         isLockoutPhase = true;
-        currentPhaseIndex = 0;
-        currentStageIndex = 0;
-        currentActionIndex = 0;
-        if (procedure.workflow_stages?.phases != null && procedure.workflow_stages.phases.Length > 0)
-            isLockoutPhase = string.Equals(procedure.workflow_stages.phases[0].phase_type, "lockout", StringComparison.OrdinalIgnoreCase);
-
-        Debug.Log($"[LOTO] Procedure initialized: {procedure.machine_name}");
-        uiController.UpdateUIForCurrentStep();
-        UpdateHologramGuide();
+        currentPhaseIndex = currentStageIndex = currentActionIndex = 0;
+        validationPending = maintenancePresented = maintenanceVisible = false;
+        ShowCurrentScreen();
     }
 
     // Returns the active step (ActionData) currently being executed
@@ -104,38 +140,84 @@ public class LotoManager : MonoBehaviour
             return;
         }
 
-        uiController.ShowStatus("Envoi à l'IA YOLO-World...", LotoUIController.PremiumYellow);
-        if (action.VerificationMethod != "visual_observation")
+        if (validationPending || capturedImageBytes == null || capturedImageBytes.Length == 0) return;
+        validationPending = true;
+        int generation = ++validationGeneration;
+        string frame = uiController.FrameIdentity;
+        string actionId = action.Id;
+        uiController.ClearFrameTargets();
+        ClearHologramGuide();
+        uiController.SetValidationBusy(true);
+        uiController.ShowStatus("Analyse de la capture selon les criteres HSE...", LotoUIController.PremiumYellow);
+        string requestIdentity = Guid.NewGuid().ToString();
+        if (TestMode)
         {
-            uiController.ShowStatus("Cette étape exige " + action.VerificationMethod + ". Utilisez la confirmation opérateur et consignez la preuve demandée.", LotoUIController.PremiumYellow);
-            return;
-        }
-        if (currentProcedure.schema_version == "2.0")
-        {
-            uiController.ShowStatus("La détection d'objet ne prouve pas cet état. Vérifiez le critère puis utilisez la confirmation opérateur.", LotoUIController.PremiumYellow);
+            string requestId = Guid.NewGuid().ToString();
+            lotoClient.VerifyTestImage(uiController.TestVersionId, stage.StageNumber, stage.stage_code, actionId,
+                capturedImageBytes, requestId, res => {
+                    if (!IsCurrentValidation(generation, actionId, frame)) return;
+                    validationPending = false; uiController.SetValidationBusy(false);
+                    if (res == null || !res.test_mode || res.request_id != requestId || res.action_id != actionId
+                        || res.image_sha256 != uiController.FrameSha256 || res.procedure_version_id != uiController.TestVersionId)
+                    { OnStepValidationFailed("Erreur technique : résultat non associé à cette capture."); return; }
+                    uiController.ShowFrameResult(res);
+                }, error => { if (IsCurrentValidation(generation, actionId, frame)) OnStepValidationFailed(error); });
             return;
         }
         lotoClient.ValidateActiveStep(stage.StageNumber, action.Id, action.vision_prompt ?? string.Empty, capturedImageBytes,
             (res) => {
+                if (!IsCurrentValidation(generation, actionId, frame)) return;
+                if (res == null || res.request_id != requestIdentity || res.action_id != actionId
+                    || res.image_sha256 != uiController.FrameSha256 || string.IsNullOrEmpty(res.outcome))
+                { OnStepValidationFailed("Erreur technique : résultat non associé à cette capture."); return; }
+                uiController.ShowFrameResult(res);
                 if (res.verified)
                 {
-                    OnStepValidated(action.Id);
+                    OnStepValidated(action.Id, FormatObservation(res));
                 }
                 else
                 {
-                    OnStepValidationFailed(res.message);
+                    OnStepValidationFailed(FormatObservation(res));
                 }
             },
             (error) => {
+                if (!IsCurrentValidation(generation, actionId, frame)) return;
                 OnStepValidationFailed(error);
-            }
+            }, requestIdentity
         );
+    }
+
+    public void RequestHumanConfirmation()
+    {
+        var action = GetActiveAction(); var stage = GetActiveStage();
+        if (validationPending || action == null || stage == null || action.VerificationMethod != "human_confirmation") return;
+        validationPending = true;
+        int generation = ++validationGeneration;
+        string actionId = action.Id, requestId = Guid.NewGuid().ToString();
+        uiController.SetValidationBusy(true);
+        uiController.ShowStatus("Enregistrement de la confirmation humaine...", LotoUIController.PremiumYellow);
+        lotoClient.ConfirmActiveStep(stage.StageNumber, stage.stage_code, actionId, TestMode, uiController.TestVersionId, requestId,
+            result => {
+                // An operator attestation is tied to the action, never to a camera frame.
+                if (generation != validationGeneration || GetActiveAction()?.Id != actionId) return;
+                if (result == null || !result.verified || result.outcome != "human_confirmed" || result.action_id != actionId
+                    || result.request_id != requestId || result.test_mode != TestMode)
+                { OnStepValidationFailed("Confirmation non enregistrée : contexte incorrect."); return; }
+                if (TestMode) { validationPending = false; uiController.SetValidationBusy(false); uiController.ShowFrameResult(result); }
+                else OnStepValidated(actionId, "Opération confirmée par l'opérateur.");
+            }, error => { if (generation == validationGeneration && GetActiveAction()?.Id == actionId) OnStepValidationFailed(error); });
+    }
+
+    private bool IsCurrentValidation(int generation, string actionId, string frame)
+    {
+        return generation == validationGeneration && GetActiveAction()?.Id == actionId && uiController.FrameIdentity == frame;
     }
 
     // Triggered when the operator clicks "Manual Override" (Mode dégradé)
     public void RequestManualOverride(string reason, byte[] capturedImageBytes,
         Action onSuccess, Action<string> onFailure)
     {
+        if (TestMode) { onFailure?.Invoke("TEST : aucune dérogation d'intervention autorisée."); return; }
         var action = GetActiveAction();
         var stage = GetActiveStage();
 
@@ -146,10 +228,16 @@ public class LotoManager : MonoBehaviour
             return;
         }
 
+        if (validationPending) { onFailure?.Invoke("Une vérification est déjà en cours."); return; }
+        validationPending = true;
+        uiController.SetValidationBusy(true);
         uiController.ShowStatus("Envoi de la dérogation manuelle...", LotoUIController.PremiumYellow);
+        int generation = ++validationGeneration;
+        string frame = uiController.FrameIdentity;
         string verificationMethod = currentProcedure.schema_version == "2.0" ? action.VerificationMethod : string.Empty;
         lotoClient.ManualOverrideActiveStep(stage.StageNumber, action.Id, reason, verificationMethod, capturedImageBytes,
             (res) => {
+                if (!IsCurrentValidation(generation, action.Id, frame)) return;
                 if (res != null && res.verified)
                 {
                     OnStepValidated(action.Id);
@@ -160,33 +248,40 @@ public class LotoManager : MonoBehaviour
                     string message = res != null && !string.IsNullOrEmpty(res.message)
                         ? res.message
                         : "Le serveur n'a pas confirmé la dérogation.";
+                    OnStepValidationFailed(message);
                     onFailure?.Invoke(message);
                 }
             },
             (error) => {
+                if (!IsCurrentValidation(generation, action.Id, frame)) return;
+                OnStepValidationFailed(error);
                 onFailure?.Invoke(error);
             }
         );
     }
 
     // Callback from SmartLOTOClient on successful validation or override
-    public void OnStepValidated(string actionId)
+    public void OnStepValidated(string actionId, string diagnosis = null)
     {
         Debug.Log($"[LOTO] Step {actionId} successfully validated.");
-        uiController.ShowStatus("Étape Validée ✅", LotoUIController.PremiumGreen);
+        uiController.ShowStatus(diagnosis ?? "Dérogation enregistrée.", LotoUIController.PremiumGreen);
         StartCoroutine(AdvanceToNextStepAfterDelay());
     }
 
     // Callback from SmartLOTOClient on validation failure
     public void OnStepValidationFailed(string errorMessage)
     {
+        validationPending = false;
+        uiController.SetValidationBusy(false);
         Debug.LogWarning($"[LOTO] Step validation failed: {errorMessage}");
-        uiController.ShowStatus($"Échec de détection ❌\n{errorMessage}", LotoUIController.PremiumRed);
+        uiController.ShowStatus(errorMessage, LotoUIController.PremiumYellow);
     }
 
     private IEnumerator AdvanceToNextStepAfterDelay()
     {
         yield return new WaitForSeconds(1.5f);
+        validationPending = false;
+        uiController.SetValidationBusy(false);
         AdvanceStep();
     }
 
@@ -221,7 +316,7 @@ public class LotoManager : MonoBehaviour
                     currentStageIndex = 0;
                     Debug.Log("[LOTO] Consignation complete. Ready for Maintenance. Next: Déconsignation phase.");
                     ClearHologramGuide();
-                    uiController.ShowMaintenanceScreen();
+                    PresentMaintenance();
                 }
                 else
                 {
@@ -240,53 +335,136 @@ public class LotoManager : MonoBehaviour
 
     private void AdvanceCanonicalPhaseStep(SmartLOTOClient.ProcedurePhaseData[] phases)
     {
-        var stage = GetActiveStage();
-        if (stage == null) return;
-        var steps = stage.steps != null && stage.steps.Length > 0 ? stage.steps : stage.actions;
-        if (steps == null || currentActionIndex >= steps.Length) return;
-
+        // Advance the action pointer within the current stage.
+        // ShowCurrentScreen will roll over to the next stage/phase as needed.
         currentActionIndex++;
-        if (currentActionIndex >= steps.Length)
+        ShowCurrentScreen();
+    }
+
+    private static bool IsMaintenanceBoundary(string type)
+    {
+        string value = (type ?? "").ToUpperInvariant();
+        return value == "INTERVENTION" || value == "MAINTENANCE" || value == "RESTORATION"
+            || value == "RESTORE" || value == "DECONSIGNATION" || value == "DÉCONSIGNATION";
+    }
+
+    public void ShowCurrentScreen()
+    {
+        if (maintenanceVisible) return;
+        var phases = currentProcedure?.workflow_stages?.phases;
+        if (phases != null && phases.Length > 0)
         {
-            currentActionIndex = 0;
-            currentStageIndex++;
-            if (currentStageIndex >= phases[currentPhaseIndex].stages.Length)
+            // Advance through every declared step, including arbitrary phase names and empty groups.
+            while (currentPhaseIndex < phases.Length)
             {
-                currentStageIndex = 0;
-                currentPhaseIndex++;
-                if (currentPhaseIndex >= phases.Length)
+                var phase = phases[currentPhaseIndex];
+                if (phase == null) { currentPhaseIndex++; continue; }
+                if (currentProcedure.phase_model_version == 0 && !maintenancePresented && IsMaintenanceBoundary(phase.phase_type))
                 {
-                    ClearHologramGuide();
-                    uiController.ShowClosureScreen();
+                    PresentMaintenance();
                     return;
                 }
-                isLockoutPhase = string.Equals(phases[currentPhaseIndex].phase_type, "lockout", StringComparison.OrdinalIgnoreCase);
+                var stages = phase.stages ?? new SmartLOTOClient.StageData[0];
+                while (currentStageIndex < stages.Length)
+                {
+                    var stage = stages[currentStageIndex];
+                    var steps = stage?.steps != null && stage.steps.Length > 0 ? stage.steps : stage?.actions;
+                    if (steps != null && currentActionIndex < steps.Length)
+                    {
+                        if (steps[currentActionIndex] == null) { currentActionIndex++; continue; }
+                        isLockoutPhase = !IsMaintenanceBoundary(phase.phase_type);
+                        uiController.ShowStepScreen();
+                        uiController.UpdateUIForCurrentStep();
+                        UpdateHologramGuide();
+                        return;
+                    }
+                    currentActionIndex = 0;
+                    currentStageIndex++;
+                }
+                currentStageIndex = 0;
+                currentPhaseIndex++;
             }
+            ClearHologramGuide();
+            if (currentProcedure.phase_model_version == 0 && !maintenancePresented) PresentMaintenance();
+            else uiController.ShowClosureScreen();
+            return;
         }
+        if (GetActiveAction() == null)
+        {
+            if (isLockoutPhase && !maintenancePresented) { isLockoutPhase = false; PresentMaintenance(); }
+            else uiController.ShowClosureScreen();
+            return;
+        }
+        uiController.ShowStepScreen();
         uiController.UpdateUIForCurrentStep();
         UpdateHologramGuide();
     }
 
-    // Triggered when operator finishes maintenance and wants to start Déconsignation
+    private void PresentMaintenance()
+    {
+        maintenancePresented = maintenanceVisible = true;
+        ClearHologramGuide();
+        uiController.ShowMaintenanceScreen();
+    }
+
     public void StartRestorationPhase()
     {
-        if (currentProcedure != null && currentProcedure.workflow_stages != null &&
-            currentProcedure.workflow_stages.phases != null && currentProcedure.workflow_stages.phases.Length > 0)
+        if (!maintenanceVisible) return;
+        maintenanceVisible = false;
+        ShowCurrentScreen();
+    }
+
+    private static string FormatObservation(SmartLOTOClient.StepValidationResponse response)
+    {
+        if (response == null) return "Le serveur n'a pas fourni de diagnostic.";
+        return response.message + "\n" + response.observed_state
+            + (string.IsNullOrEmpty(response.detected_component) ? "" : "\nOrgane : " + response.detected_component)
+            + " | Confiance : " + response.confidence.ToString("P0");
+    }
+
+    public List<SmartLOTOClient.ComponentData> GetActiveComponents()
+    {
+        var result = new List<SmartLOTOClient.ComponentData>();
+        var action = GetActiveAction();
+        if (action == null) return result;
+        foreach (var component in currentProcedure.components ?? new SmartLOTOClient.ComponentData[0])
+            if (SmartLOTOClient.ReferencesComponent(action, component)) result.Add(component);
+        return result;
+    }
+
+    public string PhaseProgress()
+    {
+        var phases = currentProcedure?.workflow_stages?.phases ?? currentProcedure?.phases;
+        if (phases == null || phases.Length == 0)
+            return isLockoutPhase ? "CONSIGNATION" : "DÉCONSIGNATION";
+
+        if (currentPhaseIndex >= phases.Length)
+            return isLockoutPhase ? "CONSIGNATION" : "DÉCONSIGNATION";
+
+        var phase = phases[currentPhaseIndex];
+        // Count total steps in this phase and steps before the current stage
+        int total = 0, before = 0;
+        var stages = phase.stages ?? new SmartLOTOClient.StageData[0];
+        for (int i = 0; i < stages.Length; i++)
         {
-            uiController.UpdateUIForCurrentStep();
-            UpdateHologramGuide();
-            return;
+            int count = stages[i]?.steps?.Length ?? stages[i]?.actions?.Length ?? 0;
+            total += count;
+            if (i < currentStageIndex) before += count;
         }
-        isLockoutPhase = false;
-        currentStageIndex = 0;
-        currentActionIndex = 0;
-        uiController.UpdateUIForCurrentStep();
-        UpdateHologramGuide();
+        string kind = (phase.phase_type ?? "").ToLowerInvariant();
+        string phaseName = kind == "restoration" ? "DÉCONSIGNATION / REMISE EN SERVICE"
+            : kind == "maintenance" || kind == "intervention" ? "MAINTENANCE"
+            : kind == "consignation" || kind == "isolation" || kind == "lockout" ? "CONSIGNATION"
+            : kind == "preparation" ? "PRÉPARATION" : !string.IsNullOrEmpty(phase.title) ? phase.title.ToUpperInvariant()
+            : $"PHASE {currentPhaseIndex + 1}";
+        int stepNum = before + currentActionIndex + 1;
+        return $"{phaseName} · Étape {stepNum} / {Mathf.Max(total, stepNum)}";
     }
 
     // Closes the intervention with the operator's drawn signature.
     public void CloseIntervention(byte[] signatureBytes)
     {
+        if (TestMode) { uiController.ShowStatus("TEST : aucune intervention à clôturer.", LotoUIController.PremiumYellow); return; }
         uiController.SetSignatureSubmitting(true);
         uiController.ShowStatus("Clôture de l'intervention et génération du PDF...", LotoUIController.PremiumYellow);
         lotoClient.CloseActiveIntervention(signatureBytes,
@@ -321,33 +499,36 @@ public class LotoManager : MonoBehaviour
     [SerializeField] private Transform originAnchor;
     private GameObject activeHologram;
 
-    private void Start()
-    {
-        // Try to find the LOTO_Origin_Anchor in the scene automatically
-        if (originAnchor == null)
-        {
-            GameObject anchorGo = GameObject.Find("LOTO_Origin_Anchor");
-            if (anchorGo == null)
-            {
-                // Create a position-only test origin. It must never appear as
-                // an opaque cube in the operator's view.
-                anchorGo = new GameObject("LOTO_Origin_Anchor");
-                anchorGo.transform.position = new Vector3(0f, 1f, 1.5f); // 1.5 meters in front of the camera, 1 meter high
-                Debug.Log("[LOTO] Position-only test origin 'LOTO_Origin_Anchor' created (not rendered).");
-            }
-            originAnchor = anchorGo.transform;
-        }
+    private void Start() { EnsureVirtualMaquetteVisible(); }
 
-        // A tracking origin is transform data only; never render a test marker
-        // or let its collider interfere with the operator's workspace.
-        foreach (Renderer marker in originAnchor.GetComponentsInChildren<Renderer>(true))
-            marker.enabled = false;
-        foreach (Collider markerCollider in originAnchor.GetComponentsInChildren<Collider>(true))
-            markerCollider.enabled = false;
+    public Transform EnsureVirtualMaquetteVisible()
+    {
+        if (originAnchor == null)
+            foreach (var candidate in Resources.FindObjectsOfTypeAll<Transform>())
+                if (candidate.name == "LOTO_Origin_Anchor" && candidate.gameObject.scene.IsValid()
+                    && candidate.gameObject.scene.isLoaded) { originAnchor = candidate; break; }
+        if (originAnchor == null) return null;
+        originAnchor.gameObject.SetActive(true);
+        Transform maquette = null;
+        foreach (var child in originAnchor.GetComponentsInChildren<Transform>(true))
+            if (child.name == "VirtualMaquette") { maquette = child; break; }
+        if (maquette != null)
+        {
+            for (Transform t = maquette; t != null && t != originAnchor; t = t.parent) t.gameObject.SetActive(true);
+            foreach (var renderer in maquette.GetComponentsInChildren<Renderer>(true)) renderer.enabled = true;
+        }
+        return originAnchor;
     }
 
-    private void UpdateHologramGuide()
+    public void UpdateHologramGuide()
     {
+        // Virtual step guidance comes only from this frame's AI localization.
+        // Manual maintenance calibration must not spawn a second, fixed arrow.
+        if (uiController != null && uiController.IsVirtualCameraSource)
+        {
+            ClearHologramGuide();
+            return;
+        }
         if (activeHologram != null)
         {
             Destroy(activeHologram);
@@ -355,30 +536,53 @@ public class LotoManager : MonoBehaviour
         }
 
         var action = GetActiveAction();
-        if (action == null || action.spatial_guide == null) return;
+        if (maintenanceVisible || validationPending || (TestMode && !uiController.IsVirtualCameraSource)
+            || !spatialTrackingConfirmed || action == null) return;
 
         // Determine correct base position (offset from anchor or target specific organ)
         Vector3 basePosition = Vector3.zero;
+        bool targetResolved = false;
         if (currentProcedure != null && currentProcedure.anchors != null)
         {
-            string descLower = action.InstructionText.ToLower();
-            string promptLower = (action.vision_prompt ?? string.Empty).ToLower();
-            
+            var components = GetActiveComponents();
             foreach (var anchor in currentProcedure.anchors)
             {
-                string organLower = anchor.organ_name.ToLower();
-                if (descLower.Contains(organLower) || promptLower.Contains(organLower))
-                {
-                    basePosition = new Vector3(anchor.pos_x, anchor.pos_y, anchor.pos_z);
-                    Debug.Log($"[LOTO Spawner] Anchoring guide to organ: '{anchor.organ_name}' at offset: {basePosition}");
-                    break;
-                }
+                if (anchor == null) continue;
+                bool matches = components.Exists(c =>
+                    (string.IsNullOrEmpty(action.primary_component) || action.primary_component == c.component_id
+                        || action.primary_component == c.tag || action.primary_component == c.unity_class_id)
+                    && (anchor.organ_name == c.component_id || anchor.organ_name == c.tag || anchor.organ_name == c.unity_class_id));
+                if (!matches) continue;
+                basePosition = new Vector3(anchor.pos_x, anchor.pos_y, anchor.pos_z);
+                targetResolved = true;
+                break;
             }
         }
 
         // Add action's relative spatial guide position
-        basePosition += new Vector3(action.spatial_guide.pos_x, action.spatial_guide.pos_y, action.spatial_guide.pos_z);
-        Vector3 guideRot = new Vector3(action.spatial_guide.rot_x, action.spatial_guide.rot_y, action.spatial_guide.rot_z);
+        Vector3 guideRot = Vector3.zero;
+        if (action.spatial_guide != null)
+        {
+            basePosition += new Vector3(action.spatial_guide.pos_x, action.spatial_guide.pos_y, action.spatial_guide.pos_z);
+            guideRot = new Vector3(action.spatial_guide.rot_x, action.spatial_guide.rot_y, action.spatial_guide.rot_z);
+            targetResolved = true;
+        }
+        else if (originAnchor != null && uiController.IsVirtualCameraSource)
+        {
+            // A calibrated model point is valid even when the procedure has no spatial guide.
+            foreach (var component in GetActiveComponents())
+            {
+                if (!string.IsNullOrEmpty(action.primary_component)
+                    && action.primary_component != component.component_id && action.primary_component != component.tag
+                    && action.primary_component != component.unity_class_id) continue;
+                string componentId = SmartLOTOClient.FirstText(component.component_id, component.tag);
+                if (!uiController.TryGetVirtualComponentPoint(componentId, out Vector3 worldPoint)) continue;
+                basePosition = originAnchor.InverseTransformPoint(worldPoint);
+                targetResolved = true;
+                break;
+            }
+        }
+        if (!targetResolved) return;
 
         // Spawn hologram relative to origin anchor
         if (originAnchor != null)
@@ -389,9 +593,22 @@ public class LotoManager : MonoBehaviour
             activeHologram.transform.localRotation = Quaternion.Euler(guideRot);
             
             // Attach visual renderer component
-            activeHologram.AddComponent<LotoHologramGuide>();
+            var guide = activeHologram.AddComponent<LotoHologramGuide>();
+            Transform model = uiController.VirtualMaquetteTransform;
+            if (uiController.IsVirtualCameraSource && model != null)
+                guide.AttachToSurface(model, model.InverseTransformPoint(activeHologram.transform.position));
             Debug.Log($"[LOTO Spawner] Hologram spawned at local position: {basePosition}");
         }
+    }
+
+    // Explicit tracking origin, or the known scene origin for the virtual 3D camera.
+    private bool spatialTrackingConfirmed;
+    public void SetTrackedOrigin(Transform anchor, bool trackingValid)
+    {
+        originAnchor = anchor;
+        spatialTrackingConfirmed = anchor != null && trackingValid;
+        if (!spatialTrackingConfirmed) ClearHologramGuide();
+        else UpdateHologramGuide();
     }
 
     private void ClearHologramGuide()

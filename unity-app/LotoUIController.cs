@@ -1,9 +1,11 @@
 using System;
+using System.IO;
 using System.Collections.Generic;
 using System.Collections;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 public partial class LotoUIController : MonoBehaviour
 {
@@ -60,6 +62,10 @@ public partial class LotoUIController : MonoBehaviour
     [SerializeField] private RawImage maintenancePreviewImage;
     [SerializeField] private Text maintenanceTaskTitleText;
     [SerializeField] private Text maintenanceCalibrationText;
+    private Text maintenanceExpectedStateText;
+    private Button maintenanceComponentButton;
+    private SmartLOTOClient.ComponentData[] calibrationComponents = new SmartLOTOClient.ComponentData[0];
+    private int calibrationComponentIndex;
     [SerializeField] private RectTransform maintenanceArrowLine;
     [SerializeField] private Text maintenanceArrowHead;
     [SerializeField] private Button startRestorationButton;
@@ -75,13 +81,55 @@ public partial class LotoUIController : MonoBehaviour
     [SerializeField] private Button openReportButton;
     [SerializeField] private Button restartButton;
 
-    [Header("Webcam Settings")]
-    [SerializeField] private bool useWebcam = true;
-    [SerializeField] private string preferredWebcamDeviceName = "";
-    [SerializeField] private float webcamStartupTimeoutSeconds = 10f;
-    private WebCamTexture webcamTexture;
-    private Coroutine webcamStartupCoroutine;
-    private bool webcamReady;
+    [Header("Virtual 3D camera (no physical camera)")]
+    [SerializeField] private Camera virtualSourceCamera;
+    [SerializeField] private RenderTexture virtualCameraTarget;
+    private Camera virtualCaptureCamera;
+    private RenderTexture virtualRenderTexture;
+    private bool ownsVirtualTarget;
+    private bool virtualCameraReady;
+    private bool firstVirtualFrameVerified;
+    private bool virtualPoseRecorded;
+    private Matrix4x4 previousVirtualPose, previousVirtualProjection, previousMockupPose;
+    private bool fixedImageInput;
+    private Coroutine pendingCapture;
+    private Coroutine pendingFrameReady;
+    private MockupSequenceTester sourceSequence;
+    public bool IsVirtualCameraSource => virtualCaptureCamera != null && !fixedImageInput;
+    public Transform VirtualMaquetteTransform => sourceSequence != null ? sourceSequence.transform : null;
+    private Vector3 initialCameraLocalPos;
+    private Quaternion initialCameraLocalRot = Quaternion.identity;
+    private float currentPitch = 0f;
+    private float currentYaw = 0f;
+    private bool cameraFramingInitialized = false;
+
+    [Header("AR Gaze QR Reticle")]
+    [SerializeField] private GameObject qrReticleObject;
+    [SerializeField] private Image qrReticleProgressImage;
+    private GameObject virtualQrTag;
+    private GameObject virtualQrEasel;
+    private GameObject workbenchObject;
+    private Coroutine gazeRecenterCoroutine;
+    private float qrGazeDwellTimer = 0f;
+    private const float QR_GAZE_DWELL_TARGET = 0.75f;
+    private bool qrScanCompleted = false;
+
+    public bool IsTextInputFocused
+    {
+        get
+        {
+            if (overrideReasonInput != null && overrideReasonInput.isFocused) return true;
+            if (GUIUtility.keyboardControl != 0) return true;
+            var es = EventSystem.current;
+            if (es != null && es.currentSelectedGameObject != null)
+            {
+                var input = es.currentSelectedGameObject.GetComponentInParent<InputField>();
+                if (input != null && input.isFocused) return true;
+            }
+            return false;
+        }
+    }
+    public RenderTexture VirtualCameraTexture => virtualRenderTexture;
     private SignaturePad signaturePad;
     private byte[] pendingOverrideImage;
     private string pendingOverrideReason;
@@ -93,19 +141,22 @@ public partial class LotoUIController : MonoBehaviour
     private SmartLOTOClient.ProcedureItem[] availableProcedures;
 
     // Palette de couleurs premium
-    public static readonly Color PremiumGray = new Color(0.44f, 0.5f, 0.59f);       // Charcoal/Slate
-    public static readonly Color PremiumGreen = new Color(0.18f, 0.77f, 0.45f);      // Emerald Green (Succès)
-    public static readonly Color PremiumRed = new Color(0.9f, 0.28f, 0.28f);         // Soft Red (Danger/Erreur)
-    public static readonly Color PremiumBlue = new Color(0.12f, 0.43f, 0.86f);       // Royal Blue (Info)
-    public static readonly Color PremiumYellow = new Color(0.95f, 0.61f, 0.07f);     // Amber (Attention)
+    public static readonly Color PremiumGray = new Color32(148, 163, 184, 255);
+    public static readonly Color PremiumGreen = new Color32(52, 211, 153, 255);
+    public static readonly Color PremiumRed = new Color32(251, 113, 133, 255);
+    public static readonly Color PremiumBlue = new Color32(125, 211, 252, 255);
+    public static readonly Color PremiumYellow = new Color32(251, 191, 36, 255);
+    public static readonly Color PremiumTeal = new Color32(94, 234, 212, 255);
 
 
     private void Start()
     {
+        if (lotoManager == null) lotoManager = GetComponent<LotoManager>();
+        if (lotoClient == null) lotoClient = GetComponent<SmartLOTOClient>();
+        StartVirtualPreview(cameraPreviewImage);
         // Initial setup - Start on Welcome Panel
         ShowPanel(welcomePanel);
-        statusText.text = "Connexion au serveur et chargement des machines...";
-        statusBackgroundImage.color = PremiumGray;
+        ShowStatus("Connexion au serveur et chargement des machines...", PremiumGray);
 
         // Welcome Panel buttons
         chooseQRScanButton.onClick.AddListener(OnChooseQRScanPressed);
@@ -122,6 +173,14 @@ public partial class LotoUIController : MonoBehaviour
         overrideCancelButton.onClick.AddListener(CancelOverrideConfirmation);
         overrideConfirmButton.onClick.AddListener(ConfirmOverride);
         startRestorationButton.onClick.AddListener(OnStartRestorationPressed);
+        if (maintenanceComponentButton != null)
+        {
+            maintenanceComponentButton.onClick.AddListener(() => {
+                if (calibrationComponents.Length == 0) return;
+                calibrationComponentIndex = (calibrationComponentIndex + 1) % calibrationComponents.Length;
+                LoadMaintenanceCalibration();
+            });
+        }
         clearSignatureButton.onClick.AddListener(() => signaturePad?.Clear());
         submitSignatureButton.onClick.AddListener(OnSubmitSignaturePressed);
         openReportButton.onClick.AddListener(OnOpenReportPressed);
@@ -168,150 +227,298 @@ public partial class LotoUIController : MonoBehaviour
         startButton.interactable = false;
     }
 
-    private void StartWebcam(RawImage targetImage)
+    private void StartVirtualPreview(RawImage targetImage)
     {
-        if (targetImage == null) return;
-
-        targetImage.color = Color.white;
-        SetCameraMessage(targetImage, "Démarrage de la caméra…");
-        if (!useWebcam)
-        {
-            SetCameraUnavailable(targetImage, "Caméra indisponible : webcam désactivée.");
-            return;
-        }
-
-        if (webcamStartupCoroutine != null) StopCoroutine(webcamStartupCoroutine);
-        webcamStartupCoroutine = StartCoroutine(StartWebcamRoutine(targetImage));
-    }
-
-    private IEnumerator StartWebcamRoutine(RawImage targetImage)
-    {
-        webcamReady = false;
-        if (!Application.HasUserAuthorization(UserAuthorization.WebCam))
-        {
-            yield return Application.RequestUserAuthorization(UserAuthorization.WebCam);
-            if (!Application.HasUserAuthorization(UserAuthorization.WebCam))
-            {
-                SetCameraUnavailable(targetImage, "Caméra indisponible : autorisation refusée.");
-                yield break;
-            }
-        }
-
-        string startupError = null;
+        if (targetImage == null || (fixedImageInput && targetImage == cameraPreviewImage)) return;
         try
         {
-            if (webcamTexture == null)
-            {
-                WebCamDevice[] devices = WebCamTexture.devices;
-                if (devices == null || devices.Length == 0)
-                    throw new InvalidOperationException("aucun périphérique détecté.");
-
-                string selectedDevice = devices[0].name;
-                if (!string.IsNullOrWhiteSpace(preferredWebcamDeviceName))
-                {
-                    foreach (WebCamDevice device in devices)
-                    {
-                        if (string.Equals(device.name, preferredWebcamDeviceName, StringComparison.OrdinalIgnoreCase))
-                        {
-                            selectedDevice = device.name;
-                            break;
-                        }
-                    }
-                }
-
-                webcamTexture = new WebCamTexture(selectedDevice, 1280, 720, 30);
-                Debug.Log("[Camera] Selected device: " + selectedDevice);
-            }
-
-            targetImage.texture = webcamTexture;
-            targetImage.color = Color.white;
-            if (!webcamTexture.isPlaying) webcamTexture.Play();
+            if (virtualCaptureCamera == null) InitializeVirtualCamera();
+            BindVirtualPreview(targetImage);
         }
-        catch (Exception e)
+        catch (Exception error)
         {
-            Debug.LogError("[Camera] Could not start webcam: " + e);
-            startupError = e.Message;
+            virtualCameraReady = false;
+            SetCameraMessage(targetImage, "Camera virtuelle indisponible : " + error.Message);
+            ShowStatus("Camera virtuelle indisponible : " + error.Message, PremiumRed);
         }
-
-        if (!string.IsNullOrEmpty(startupError))
-        {
-            SetCameraUnavailable(targetImage, "Caméra indisponible : " + startupError);
-            yield break;
-        }
-
-        float deadline = Time.realtimeSinceStartup + Mathf.Max(1f, webcamStartupTimeoutSeconds);
-        while (Time.realtimeSinceStartup < deadline)
-        {
-            if (targetImage == null) yield break;
-            if (webcamTexture != null && webcamTexture.isPlaying &&
-                webcamTexture.width > 16 && webcamTexture.height > 16 && webcamTexture.didUpdateThisFrame)
-            {
-                webcamReady = true;
-                UpdateCameraPreview(targetImage);
-                SetCameraMessage(targetImage, "");
-                ShowStatus("Caméra active — image reçue.", PremiumGreen);
-                Debug.Log($"[Camera] First frame received: {webcamTexture.width}x{webcamTexture.height}, " +
-                          $"rotation={webcamTexture.videoRotationAngle}, mirrored={webcamTexture.videoVerticallyMirrored}");
-                yield break;
-            }
-            yield return null;
-        }
-
-        if (webcamTexture != null && webcamTexture.isPlaying) webcamTexture.Stop();
-        SetCameraUnavailable(targetImage, "Caméra indisponible : aucune image reçue du périphérique.");
     }
 
-    private void UpdateCameraPreview(RawImage targetImage)
+    private void InitializeVirtualCamera()
     {
-        if (targetImage == null || webcamTexture == null) return;
-        targetImage.color = Color.white;
-        int rotation = webcamTexture.videoRotationAngle;
-        targetImage.rectTransform.localEulerAngles = new Vector3(0f, 0f, -rotation);
+        Transform origin = lotoManager != null ? lotoManager.EnsureVirtualMaquetteVisible() : null;
+        if (virtualSourceCamera == null) virtualSourceCamera = Camera.main;
+        if (virtualSourceCamera == null)
+            foreach (var candidate in Resources.FindObjectsOfTypeAll<Camera>())
+                if (candidate.gameObject.scene.IsValid() && candidate.gameObject.scene.isLoaded
+                    && (candidate.CompareTag("MainCamera") || candidate.name == "Main Camera"))
+                { virtualSourceCamera = candidate; break; }
+        if (virtualSourceCamera == null) throw new InvalidOperationException("Main Camera absente de la scene.");
+        virtualSourceCamera.gameObject.SetActive(true);
+        RenderTexture candidateTarget = virtualCameraTarget != null ? virtualCameraTarget : virtualSourceCamera.targetTexture;
+        virtualSourceCamera.targetTexture = null; // Display 1 must keep its camera.
+        virtualSourceCamera.targetDisplay = 0;
+        virtualSourceCamera.enabled = true;
+        virtualSourceCamera.cullingMask = ~0;
+        int uiLayer = LayerMask.NameToLayer("UI");
+        if (uiLayer >= 0) virtualSourceCamera.cullingMask &= ~(1 << uiLayer);
+        virtualSourceCamera.clearFlags = CameraClearFlags.SolidColor;
+        virtualSourceCamera.backgroundColor = new Color(0.06f, 0.08f, 0.12f, 1f);
+        virtualSourceCamera.nearClipPlane = 0.01f;
+        virtualSourceCamera.fieldOfView = 60f;
 
-        AspectRatioFitter fitter = targetImage.GetComponent<AspectRatioFitter>();
-        if (fitter == null) fitter = targetImage.gameObject.AddComponent<AspectRatioFitter>();
-        fitter.aspectMode = AspectRatioFitter.AspectMode.FitInParent;
-        bool rotated = rotation == 90 || rotation == 270;
-        fitter.aspectRatio = rotated
-            ? (float)webcamTexture.height / webcamTexture.width
-            : (float)webcamTexture.width / webcamTexture.height;
-
-        Vector3 scale = targetImage.rectTransform.localScale;
-        targetImage.rectTransform.localScale = new Vector3(Mathf.Abs(scale.x),
-            webcamTexture.videoVerticallyMirrored ? -Mathf.Abs(scale.y) : Mathf.Abs(scale.y), scale.z);
-
-        Transform message = targetImage.transform.Find("Camera Status");
-        if (message != null)
+        virtualSourceCamera.transform.position = new Vector3(0f, 1.38f, 0.95f);
+        virtualSourceCamera.transform.rotation = Quaternion.Euler(48f, 0f, 0f);
+        if (!cameraFramingInitialized)
         {
-            message.localEulerAngles = new Vector3(0f, 0f, rotation);
-            Vector3 messageScale = message.localScale;
-            message.localScale = new Vector3(1f,
-                webcamTexture.videoVerticallyMirrored ? -Mathf.Abs(messageScale.y) : Mathf.Abs(messageScale.y), 1f);
+            initialCameraLocalPos = virtualSourceCamera.transform.localPosition;
+            initialCameraLocalRot = virtualSourceCamera.transform.localRotation;
+            cameraFramingInitialized = true;
         }
-        if (targetImage == maintenancePreviewImage) UpdateMaintenanceGuideVisuals();
-    }
 
-    private void SetCameraUnavailable(RawImage targetImage, string message)
-    {
-        webcamReady = false;
-        if (webcamTexture != null && webcamTexture.isPlaying) webcamTexture.Stop();
-        if (targetImage != null)
+        if (candidateTarget != null && candidateTarget.width == 1280 && candidateTarget.height == 720 && candidateTarget.depth >= 24)
+            virtualRenderTexture = candidateTarget;
+        else
         {
-            targetImage.texture = null;
-            targetImage.color = Color.white;
-            targetImage.rectTransform.localEulerAngles = Vector3.zero;
-            Vector3 scale = targetImage.rectTransform.localScale;
-            targetImage.rectTransform.localScale = new Vector3(Mathf.Abs(scale.x), Mathf.Abs(scale.y), scale.z);
-            SetCameraMessage(targetImage, message);
-            Transform cameraMessage = targetImage.transform.Find("Camera Status");
-            if (cameraMessage != null)
+            virtualRenderTexture = new RenderTexture(1280, 720, 24, RenderTextureFormat.ARGB32)
+                { name = "SmartLOTO Virtual Camera 1280x720", filterMode = FilterMode.Bilinear };
+            ownsVirtualTarget = true;
+        }
+        if (!virtualRenderTexture.IsCreated() && !virtualRenderTexture.Create())
+            throw new InvalidOperationException("RenderTexture 1280x720 non disponible.");
+        var cameraObject = new GameObject("SmartLOTO Virtual Capture Camera");
+        cameraObject.SetActive(false);
+        cameraObject.transform.SetParent(origin != null ? origin : virtualSourceCamera.transform.parent, false);
+        cameraObject.transform.localPosition = virtualSourceCamera.transform.localPosition;
+        cameraObject.transform.localRotation = virtualSourceCamera.transform.localRotation;
+        virtualCaptureCamera = cameraObject.AddComponent<Camera>();
+        UpdateVirtualCameraSettings();
+        cameraObject.SetActive(true);
+        if (origin != null)
+        {
+            sourceSequence = origin.GetComponentInChildren<MockupSequenceTester>(true);
+            if (sourceSequence != null)
             {
-                cameraMessage.localEulerAngles = Vector3.zero;
-                cameraMessage.localScale = Vector3.one;
+                sourceSequence.TextureChanged += OnVirtualTextureChanged;
+                FrameVirtualMaquette();
             }
         }
-        ShowStatus(message, PremiumRed);
-        Debug.LogWarning("[Camera] " + message);
+        BindVirtualPreview(cameraPreviewImage);
+        BindVirtualPreview(qrCameraPreviewImage);
+        BindVirtualPreview(maintenancePreviewImage);
+        if (origin != null) lotoManager.SetTrackedOrigin(origin, true);
+        QueueVirtualFrameReady();
+        Debug.Log("[Virtual Camera] Main Camera -> AR Fullscreen view; capture camera -> 1280x720 RenderTexture.");
+    }
+
+    private void FrameVirtualMaquette()
+    {
+        if (sourceSequence == null || virtualSourceCamera == null) return;
+
+        // 0. Création d'un vrai plateau d'établi horizontal bien visible sous les objets
+        EnsureWorkbenchSurface();
+
+        // 1. Format Paysage strict (largeur X = 0.58m > profondeur Z = 0.35m, ratio 1.655)
+        float aspect = 1614f / 975f; // ≈ 1.655
+        float tableWidth = 0.58f; // Largeur horizontale (axe X monde)
+        float tableDepth = tableWidth / aspect; // Profondeur (axe Z monde) ≈ 0.35m
+
+        // Sur le Quad Unity (texture native 975x1614) avec rotation paysage -90° sur Z :
+        // local X (975) s'aligne avec Z monde (tableDepth = 0.35m)
+        // local Y (1614) s'aligne avec X monde (tableWidth = 0.58m)
+        sourceSequence.transform.localScale = new Vector3(tableDepth, tableWidth, 1f);
+
+        // 2. Pose de la maquette posée horizontalement à plat sur la table (espace Monde) :
+        // X = -0.16 m : cadrée dans les deux tiers gauche/centre (Viewport X ∈ [0.06, 0.63]),
+        // dégageant plus de 15 cm avec la carte d'action HUD à droite (X ∈ [0.68, 0.98])
+        // Y = 0.954 m : repose à plat strictement au-dessus du plateau d'établi (Y = 0.950 m) sans aucune intersection
+        // Z = 1.38 m : distance naturelle de travail devant l'opérateur
+        sourceSequence.transform.position = new Vector3(-0.16f, 0.954f, 1.38f);
+
+        // Orientation paysage horizontal strictement à plat sur la table (Pitch = 90° exact) :
+        // Le pitch à 90° garantit que le plan reste parfaitement horizontal et ne s'enfonce jamais
+        // dans le cube de la table, éliminant ainsi toute coupure / discontinuité visuelle.
+        // - 90° sur X : rigoureusement parallèle au plateau d'établi
+        // - -90° sur Z :
+        //   * Porte-piles rouge en haut à gauche
+        //   * Boîtier/interrupteur blanc en bas à gauche (avec ON/OFF à l'endroit)
+        //   * Carter transparent avec ampoule sur la moitié droite
+        sourceSequence.transform.rotation = Quaternion.Euler(90f, 0f, -90f);
+
+        // 3. Pose de la caméra opérateur (Meta Quest) :
+        virtualSourceCamera.transform.position = new Vector3(0f, 1.38f, 0.95f);
+        virtualSourceCamera.transform.rotation = Quaternion.Euler(48f, 0f, 0f);
+
+        // Mémoriser le cadrage initial pour le recentrage (touche R) et le Mouse Look
+        initialCameraLocalPos = virtualSourceCamera.transform.localPosition;
+        initialCameraLocalRot = virtualSourceCamera.transform.localRotation;
+        currentPitch = 0f;
+        currentYaw = 0f;
+
+        // 4. Ancrage du chevalet QR Code 3D sur l'établi à gauche
+        EnsureVirtualQRCodeTag();
+
+        Debug.Log($"[VirtualMaquette] Pose table paysage : {tableWidth:F2}x{tableDepth:F2}m, pos {sourceSequence.transform.position}, regard Quest 48°");
+    }
+
+    private void UpdateVirtualCameraSettings()
+    {
+        if (virtualCaptureCamera == null || virtualSourceCamera == null) return;
+        virtualSourceCamera.targetTexture = null;
+        virtualCaptureCamera.CopyFrom(virtualSourceCamera);
+        virtualCaptureCamera.transform.SetPositionAndRotation(
+            virtualSourceCamera.transform.position, virtualSourceCamera.transform.rotation);
+        virtualCaptureCamera.targetTexture = virtualRenderTexture;
+        virtualCaptureCamera.nearClipPlane = .01f;
+        virtualCaptureCamera.aspect = 1280f / 720f;
+        virtualCaptureCamera.depth = virtualSourceCamera.depth - 1;
+        int uiLayer = LayerMask.NameToLayer("UI");
+        if (uiLayer >= 0) virtualCaptureCamera.cullingMask &= ~(1 << uiLayer);
+        virtualCaptureCamera.enabled = true;
+    }
+
+    private void BindVirtualPreview(RawImage target)
+    {
+        if (target == null) return;
+        target.gameObject.SetActive(true);
+        target.enabled = true;
+        target.texture = virtualRenderTexture;
+        target.color = Color.white;
+        target.raycastTarget = target == maintenancePreviewImage;
+        if (target == maintenancePreviewImage)
+        {
+            if (maintenanceArrowLine != null)
+            {
+                var graphic = maintenanceArrowLine.GetComponent<Graphic>();
+                if (graphic != null) graphic.raycastTarget = false;
+            }
+            if (maintenanceArrowHead != null) maintenanceArrowHead.raycastTarget = false;
+        }
+        SetCameraMessage(target, "");
+    }
+
+    private void QueueVirtualFrameReady()
+    {
+        virtualCameraReady = false;
+        if (pendingFrameReady != null) StopCoroutine(pendingFrameReady);
+        pendingFrameReady = StartCoroutine(WaitForVirtualFrame());
+    }
+    private IEnumerator WaitForVirtualFrame()
+    {
+        yield return new WaitForEndOfFrame();
+        virtualCameraReady = (sourceSequence != null && sourceSequence.ActiveTexture != null)
+            || (virtualCaptureCamera != null && virtualCaptureCamera.enabled
+            && virtualRenderTexture != null && virtualRenderTexture.IsCreated());
+        pendingFrameReady = null;
+        if (virtualCameraReady && !firstVirtualFrameVerified)
+        {
+            Texture2D firstFrame = null;
+            try
+            {
+                firstFrame = ReadVirtualCameraFrame();
+                if (firstFrame == null) throw new InvalidOperationException("Premier rendu indisponible.");
+                int bytes = firstFrame.EncodeToPNG().Length;
+                firstVirtualFrameVerified = true;
+                Debug.Log("[Virtual Camera] First rendered frame " + firstFrame.width + "x" + firstFrame.height + " / " + bytes + " PNG bytes.");
+            }
+            catch (Exception error)
+            {
+                virtualCameraReady = false;
+                ShowStatus("Lecture du rendu virtuel impossible : " + error.Message, PremiumRed);
+            }
+            finally { if (firstFrame != null) Destroy(firstFrame); }
+        }
+        if (virtualCameraReady && pendingCapture == null && !lotoManager.IsValidationPending)
+        {
+            lotoManager.UpdateHologramGuide();
+            QueueStepGuidance();
+        }
+    }
+
+    private void OnVirtualTextureChanged(Texture2D texture)
+    {
+        if (fixedImageInput) return;
+        if (pendingCapture != null) { StopCoroutine(pendingCapture); pendingCapture = null; }
+        bool human = lotoManager.GetActiveAction()?.VerificationMethod == "human_confirmation";
+        if (human) ClearFrameTargets();
+        else lotoManager.InvalidateValidation();
+        FrameIdentity = Guid.NewGuid().ToString(); FrameSha256 = "";
+        if (lotoManager.GetActiveAction() != null && !human)
+            ShowStatus("", PremiumGray);
+
+        if (sourceSequence != null)
+        {
+            float aspect = 1614f / 975f;
+            float tableWidth = 0.58f;
+            float tableDepth = tableWidth / aspect;
+            sourceSequence.transform.localScale = new Vector3(tableDepth, tableWidth, 1f);
+        }
+
+        QueueVirtualFrameReady();
+    }
+
+    public static Texture2D CreateReadableTexture(Texture source, TextureFormat format = TextureFormat.RGBA32)
+    {
+        if (source == null) return null;
+        int w = source.width;
+        int h = source.height;
+        RenderTexture tempRT = RenderTexture.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32);
+        RenderTexture prevRT = RenderTexture.active;
+        try
+        {
+            Graphics.Blit(source, tempRT);
+            RenderTexture.active = tempRT;
+            Texture2D readableTex = new Texture2D(w, h, format, false);
+            readableTex.ReadPixels(new Rect(0, 0, w, h), 0, 0);
+            readableTex.Apply();
+            return readableTex;
+        }
+        finally
+        {
+            RenderTexture.active = prevRT;
+            RenderTexture.ReleaseTemporary(tempRT);
+        }
+    }
+
+    public Texture2D ReadVirtualCameraFrame()
+    {
+        if (sourceSequence != null && sourceSequence.ActiveTexture != null)
+        {
+            return CreateReadableTexture(sourceSequence.ActiveTexture, TextureFormat.RGB24);
+        }
+
+        if (!virtualCameraReady || virtualRenderTexture == null || !virtualRenderTexture.IsCreated()) return null;
+        RenderTexture previous = RenderTexture.active;
+        Texture2D frame = null;
+        try
+        {
+            RenderTexture.active = virtualRenderTexture;
+            frame = new Texture2D(virtualRenderTexture.width, virtualRenderTexture.height, TextureFormat.RGB24, false);
+            frame.ReadPixels(new Rect(0, 0, virtualRenderTexture.width, virtualRenderTexture.height), 0, 0);
+            frame.Apply();
+            return frame;
+        }
+        catch { if (frame != null) Destroy(frame); throw; }
+        finally { RenderTexture.active = previous; }
+    }
+
+    public void IdentifyVirtualMaquette(string machineId)
+    {
+        Transform origin = lotoManager.EnsureVirtualMaquetteVisible();
+        lotoManager.SetTrackedOrigin(origin, origin != null);
+        fixedImageInput = false;
+        StartVirtualPreview(qrCameraPreviewImage);
+        SelectMachineById(machineId);
+        if (ImageTestMode && lotoManager.currentProcedure != null && lotoManager.currentProcedure.machine_id == machineId)
+        {
+            ShowStepScreen(); UpdateUIForCurrentStep();
+            ShowStatus("SIMULATION 3D : " + machineId + " identifie, origine virtuelle ancree.", PremiumGreen);
+        }
+        else
+        {
+            // Identification is not consent to create an intervention or replace a draft.
+            showTestBrowser = true;
+            ShowStatus("Equipement identifie et ancre. Chargez la procedure.", PremiumBlue);
+        }
     }
 
     private void SetCameraMessage(RawImage targetImage, string message)
@@ -329,7 +536,7 @@ public partial class LotoUIController : MonoBehaviour
             rect.offsetMin = new Vector2(12f, 12f);
             rect.offsetMax = new Vector2(-12f, -12f);
             label = labelObject.GetComponent<Text>();
-            label.font = Resources.GetBuiltinResource<Font>("Arial.ttf");
+           label.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
             label.alignment = TextAnchor.MiddleCenter;
             label.fontSize = 20;
             label.color = Color.white;
@@ -343,23 +550,9 @@ public partial class LotoUIController : MonoBehaviour
         label.enabled = !string.IsNullOrEmpty(message);
     }
 
-    private void StopWebcam()
-    {
-        webcamReady = false;
-        if (webcamStartupCoroutine != null)
-        {
-            StopCoroutine(webcamStartupCoroutine);
-            webcamStartupCoroutine = null;
-        }
-        if (webcamTexture != null && webcamTexture.isPlaying)
-        {
-            webcamTexture.Stop();
-            Debug.Log("Webcam stopped.");
-        }
-    }
-
     private void ShowPanel(GameObject panelToShow)
     {
+        if (panelToShow != stepPanel) ClearFrameTargets();
         welcomePanel.SetActive(panelToShow == welcomePanel);
         manualSelectionPanel.SetActive(panelToShow == manualSelectionPanel);
         qrScanPanel.SetActive(panelToShow == qrScanPanel);
@@ -372,32 +565,40 @@ public partial class LotoUIController : MonoBehaviour
     private void OnChooseQRScanPressed()
     {
         ShowPanel(qrScanPanel);
-        StartWebcam(qrCameraPreviewImage);
-        ShowStatus("Scanner actif. C cadres du QR Code...", PremiumBlue);
+        StartVirtualPreview(qrCameraPreviewImage);
+        ShowStatus("Scanner actif. Cadrez le QR code...", PremiumBlue);
         
         var scanner = GetComponent<LotoQRScanner>();
         if (scanner != null)
         {
-            scanner.ResumeScanning();
+            scanner.IdentifyVirtualMaquette();
         }
+        else IdentifyVirtualMaquette("SL-POC-01");
     }
 
     private void OnChooseManualPressed()
     {
         ShowPanel(manualSelectionPanel);
-        StopWebcam();
+        ClearFrameTargets();
         ShowStatus("Sélectionnez une machine et cliquez sur Démarrer.", PremiumGray);
     }
 
     private void OnBackToWelcomePressed()
     {
+        if (gazeRecenterCoroutine != null) { StopCoroutine(gazeRecenterCoroutine); gazeRecenterCoroutine = null; }
+        currentPitch = 0f;
+        currentYaw = 0f;
+        if (virtualSourceCamera != null) virtualSourceCamera.transform.localRotation = initialCameraLocalRot;
+        qrScanCompleted = false;
+        qrGazeDwellTimer = 0f;
         ShowPanel(welcomePanel);
-        StopWebcam();
+        ClearFrameTargets();
         ShowStatus("Sélectionnez le mode d'initialisation.", PremiumGray);
     }
 
     private void OnStartPressed()
     {
+        if (ImageTestMode) { ShowStatus("TEST actif : redémarrez pour ouvrir une intervention réelle.", PremiumYellow); return; }
         if (availableProcedures == null || availableProcedures.Length == 0)
         {
             ShowStatus("Erreur : Aucune machine disponible.", PremiumRed);
@@ -413,8 +614,10 @@ public partial class LotoUIController : MonoBehaviour
         lotoClient.StartIntervention(machineId,
             () => {
                 startButton.interactable = true;
-                ShowPanel(stepPanel);
-                StartWebcam(cameraPreviewImage);
+                qrScanCompleted = true;
+                if (qrReticleObject != null) qrReticleObject.SetActive(false);
+                if (gazeRecenterCoroutine != null) StopCoroutine(gazeRecenterCoroutine);
+                gazeRecenterCoroutine = StartCoroutine(SmoothRecenterGaze(0.5f));
             },
             (error) => {
                 startButton.interactable = true;
@@ -425,9 +628,32 @@ public partial class LotoUIController : MonoBehaviour
 
     private void OnValidatePressed()
     {
-        byte[] imageBytes = GetCapturedImageBytes();
-        if (imageBytes == null) return;
-        lotoManager.RequestStepValidation(imageBytes);
+        if (lotoManager.IsValidationPending) return;
+        if (lotoManager.GetActiveAction()?.VerificationMethod == "human_confirmation")
+        { lotoManager.RequestHumanConfirmation(); return; }
+        if (pendingCapture != null) return;
+        if (fixedImageInput)
+        {
+            byte[] fixedBytes = GetCapturedImageBytes();
+            if (fixedBytes != null) lotoManager.RequestStepValidation(fixedBytes);
+            return;
+        }
+        pendingCapture = StartCoroutine(CaptureRenderedFrame());
+    }
+
+    private IEnumerator CaptureRenderedFrame()
+    {
+        string action = lotoManager.GetActiveAction()?.Id;
+        // Remove application guidance before rendering the evidence frame.
+        lotoManager.InvalidateValidation();
+        SetValidationBusy(true);
+        yield return new WaitForEndOfFrame();
+        pendingCapture = null;
+        SetValidationBusy(false);
+        if (lotoManager.GetActiveAction()?.Id != action) yield break;
+        virtualCameraReady = virtualRenderTexture != null && virtualRenderTexture.IsCreated();
+        byte[] bytes = GetCapturedImageBytes();
+        if (bytes != null) lotoManager.RequestStepValidation(bytes);
     }
 
     private void OnOverridePressed()
@@ -479,8 +705,6 @@ public partial class LotoUIController : MonoBehaviour
     private void OnStartRestorationPressed()
     {
         lotoManager.StartRestorationPhase();
-        ShowPanel(stepPanel);
-        StartWebcam(cameraPreviewImage);
     }
 
     private void OnSubmitSignaturePressed()
@@ -518,10 +742,16 @@ public partial class LotoUIController : MonoBehaviour
 
     private void OnRestartPressed()
     {
+        if (gazeRecenterCoroutine != null) { StopCoroutine(gazeRecenterCoroutine); gazeRecenterCoroutine = null; }
+        currentPitch = 0f;
+        currentYaw = 0f;
+        if (virtualSourceCamera != null) virtualSourceCamera.transform.localRotation = initialCameraLocalRot;
+        qrScanCompleted = false;
+        qrGazeDwellTimer = 0f;
         lotoClient.activeInterventionId = "";
         lotoClient.activeMachineId = "";
         ShowPanel(welcomePanel);
-        StopWebcam();
+        ClearFrameTargets();
         ShowStatus("Chargement des machines...", PremiumGray);
         lotoClient.GetProceduresList(OnProceduresLoaded, OnProceduresLoadFailed);
         
@@ -535,11 +765,6 @@ public partial class LotoUIController : MonoBehaviour
     public bool IsOnQRScanScreen()
     {
         return qrScanPanel != null && qrScanPanel.activeSelf;
-    }
-
-    public WebCamTexture GetWebcamTexture()
-    {
-        return webcamTexture;
     }
 
     public bool SelectMachineById(string machineId)
@@ -564,43 +789,82 @@ public partial class LotoUIController : MonoBehaviour
 
     public void UpdateUIForCurrentStep()
     {
+        ClearFrameTargets();
+        ResumeLivePreview();
         var action = lotoManager.GetActiveAction();
         var stage = lotoManager.GetActiveStage();
 
         if (action == null || stage == null) return;
+        bool human = action.VerificationMethod == "human_confirmation";
+        validateButton.GetComponentInChildren<Text>().text = human ? "Je confirme avoir réalisé l’opération" : "Capturer et vérifier";
+        overrideReasonInput.gameObject.SetActive(!human);
+        overrideButton.gameObject.SetActive(!human);
+        if (human)
+        {
+            ClearFrameTargets();
+            SetCameraMessage(cameraPreviewImage, "");
+        }
+        else if (!fixedImageInput) StartVirtualPreview(cameraPreviewImage);
 
-        var phases = lotoManager.currentProcedure.workflow_stages.phases;
-        phaseTitleText.text = phases != null && phases.Length > lotoManager.currentPhaseIndex
-            ? phases[lotoManager.currentPhaseIndex].title
-            : (lotoManager.isLockoutPhase ? "Consignation" : "Déconsignation");
-        stageTitleText.text = $"Étape {stage.StageNumber} - {stage.title}";
-        stepDescText.text = $"Action {action.Id} : {action.InstructionText}";
+        phaseTitleText.text = lotoManager.PhaseProgress();
+        stageTitleText.text = stage.title;
+        stepDescText.text = action.InstructionText;
         string criteria = action.VerificationCriteria != null && action.VerificationCriteria.Length > 0
             ? string.Join("; ", action.VerificationCriteria)
             : action.ExpectedText;
-        visionPromptText.text = $"Vérification ({action.VerificationMethod}) : {criteria}";
+        var context = new System.Text.StringBuilder();
+        var components = lotoManager.GetActiveComponents();
+        var componentIds = new HashSet<string>();
+        foreach (var c in components)
+        {
+            foreach (var id in new[] { c.component_id, c.internal_id, c.tag, c.source_tag, c.unity_class_id })
+                if (!string.IsNullOrEmpty(id)) componentIds.Add(id);
+            context.AppendLine(c.tag + " · " + c.component_name);
+            foreach (var signature in c.physical_signatures ?? new SmartLOTOClient.PhysicalSignatureData[0])
+                context.AppendLine("Repère " + SmartLOTOClient.FirstText(signature.signature_type, signature.feature_type) + " : " + signature.description + " " + signature.details);
+            foreach (var state in c.state_rules ?? new SmartLOTOClient.StateRuleData[0])
+                context.AppendLine("État " + state.state_name + " : " + state.physical_rule);
+        }
+        context.AppendLine("À vérifier (" + action.VerificationMethod + ") : " + criteria);
+        if (!string.IsNullOrEmpty(action.expected_result)) context.AppendLine("Résultat attendu : " + action.expected_result);
+        foreach (var q in lotoManager.currentProcedure.clarifications_required ?? new SmartLOTOClient.ResolvedClarificationData[0])
+        {
+            string status = (q.status ?? "").ToLowerInvariant();
+            if ((status != "resolved" && status != "approved" && status != "answered") || string.IsNullOrWhiteSpace(q.answer)) continue;
+            bool relevant = Array.IndexOf(q.affected_step_ids ?? new string[0], action.Id) >= 0;
+            if (q.affected_step_ids == null || q.affected_step_ids.Length == 0)
+                foreach (var id in q.related_component_ids ?? new string[0]) relevant |= componentIds.Contains(id);
+            if (relevant) context.AppendLine("Décision HSE : " + q.question + " — " + q.answer + " " + q.rationale);
+        }
+        visionPromptText.text = context.ToString();
+        SetValidationBusy(false);
 
-        ShowStatus("Prêt pour la capture", PremiumBlue);
+        ShowStatus(human ? "Confirmation humaine normale — aucune caméra ni dérogation requise." : "Prêt pour la capture", PremiumBlue);
+        QueueStepGuidance();
     }
 
     public void ShowMaintenanceScreen()
     {
         ShowPanel(maintenancePanel);
-        maintenanceTaskTitleText.text = "Remplacer l'ampoule";
-        StartWebcam(maintenancePreviewImage);
+        var procedure = lotoManager.currentProcedure;
+        maintenanceTaskTitleText.text = SmartLOTOClient.FirstText(procedure.maintenance_objective, procedure.objective, "Intervention prévue par la procédure");
+        maintenanceExpectedStateText.text = "État final attendu : " + procedure.expected_final_state;
+        calibrationComponents = procedure.components ?? new SmartLOTOClient.ComponentData[0];
+        calibrationComponentIndex = 0;
+        StartVirtualPreview(maintenancePreviewImage);
         LoadMaintenanceCalibration();
         ShowStatus("Consignation validée. Calibrez la zone de maintenance sur la vue caméra.", PremiumGreen);
     }
 
     public void ShowClosureScreen()
     {
-        StopWebcam();
+        ClearFrameTargets();
         ShowPanel(signaturePanel);
         if (signaturePad != null) signaturePad.Clear();
         string machine = lotoClient != null ? lotoClient.activeMachineId : "machine";
-        closureSummaryText.text = $"Machine : {machine}\nConsignation et déconsignation terminées.";
+        closureSummaryText.text = $"Machine : {machine}\nToutes les étapes de la procédure sont terminées.";
         SetSignatureSubmitting(false);
-        ShowStatus("Déconsignation terminée. Dessinez votre signature pour clôturer.", PremiumBlue);
+        ShowStatus("Procédure terminée. Dessinez votre signature pour clôturer.", PremiumBlue);
     }
 
     public void ShowFinalReportScreen(string pdfReportUrl)
@@ -612,65 +876,63 @@ public partial class LotoUIController : MonoBehaviour
 
     public void ShowStatus(string message, Color color)
     {
-        statusText.text = message;
-        statusBackgroundImage.color = color;
+        if (statusText != null)
+        {
+            statusText.text = message;
+            statusText.color = Color.Lerp(color, Color.white, .4f);
+        }
+        if (statusBackgroundImage != null)
+        {
+            Color c = Color.Lerp(new Color32(11, 19, 30, 255), color, .12f);
+            c.a = string.IsNullOrEmpty(message) ? 0f : .72f;
+            statusBackgroundImage.color = c;
+            var edge = statusBackgroundImage.GetComponent<Outline>();
+            if (edge != null)
+                edge.effectColor = new Color(color.r, color.g, color.b, string.IsNullOrEmpty(message) ? 0f : .65f);
+        }
     }
+
+    public void SetValidationBusy(bool busy)
+    {
+        validateButton.interactable = !busy;
+        bool human = lotoManager.GetActiveAction()?.VerificationMethod == "human_confirmation";
+        var label = validateButton.GetComponentInChildren<Text>();
+        if (label != null)
+        {
+            label.color = new Color32(224, 242, 254, 255);
+            label.text = busy ? (human ? "Confirmation en cours..." : "Analyse HSE en cours...")
+                : human ? "Je confirme avoir réalisé l’opération" : "Capturer et vérifier";
+        }
+        overrideButton.interactable = !busy && !ImageTestMode && lotoManager.GetActiveAction()?.VerificationMethod != "human_confirmation";
+        overrideConfirmButton.interactable = !busy;
+    }
+
+    public void ShowStepScreen()
+    {
+        if (stepPanel.activeSelf) return;
+        ShowPanel(stepPanel);
+        if (lotoManager.GetActiveAction()?.VerificationMethod != "human_confirmation") StartVirtualPreview(cameraPreviewImage);
+    }
+
+    private string CalibrationComponentId => calibrationComponents.Length == 0 ? string.Empty
+        : SmartLOTOClient.FirstText(calibrationComponents[calibrationComponentIndex].component_id, calibrationComponents[calibrationComponentIndex].tag);
 
     private byte[] GetCapturedImageBytes()
     {
-        if (!webcamReady || webcamTexture == null || !webcamTexture.isPlaying ||
-            webcamTexture.width <= 16 || webcamTexture.height <= 16)
-        {
-            ShowStatus("Caméra indisponible : aucune image réelle à envoyer.", PremiumRed);
-            return null;
-        }
-
+        if (fixedImageInput) return fixedFrameBytes;
+        Texture2D frame = null;
         try
         {
-            int sourceWidth = webcamTexture.width;
-            int sourceHeight = webcamTexture.height;
-            int rotation = webcamTexture.videoRotationAngle;
-            Color32[] source = webcamTexture.GetPixels32();
-            if (source == null || source.Length != sourceWidth * sourceHeight)
-                throw new InvalidOperationException("La caméra n'a pas fourni une image complète.");
-
-            bool rotated = rotation == 90 || rotation == 270;
-            int outputWidth = rotated ? sourceHeight : sourceWidth;
-            int outputHeight = rotated ? sourceWidth : sourceHeight;
-            Color32[] output = new Color32[outputWidth * outputHeight];
-            bool mirrorY = webcamTexture.videoVerticallyMirrored;
-
-            for (int y = 0; y < outputHeight; y++)
-            {
-                for (int x = 0; x < outputWidth; x++)
-                {
-                    int sourceX;
-                    int sourceY;
-                    switch (rotation)
-                    {
-                        case 90:  sourceX = y; sourceY = sourceHeight - 1 - x; break;
-                        case 180: sourceX = sourceWidth - 1 - x; sourceY = sourceHeight - 1 - y; break;
-                        case 270: sourceX = sourceWidth - 1 - y; sourceY = x; break;
-                        default:  sourceX = x; sourceY = y; break;
-                    }
-                    if (mirrorY) sourceY = sourceHeight - 1 - sourceY;
-                    output[y * outputWidth + x] = source[sourceY * sourceWidth + sourceX];
-                }
-            }
-
-            Texture2D snap = new Texture2D(outputWidth, outputHeight, TextureFormat.RGB24, false);
-            snap.SetPixels32(output);
-            snap.Apply();
-            byte[] bytes = snap.EncodeToJPG(90);
-            Destroy(snap);
-            if (bytes == null || bytes.Length < 100)
-                throw new InvalidOperationException("L'image de la caméra est vide.");
-            return bytes;
+            frame = ReadVirtualCameraFrame();
+            if (frame == null) { ShowStatus("Camera virtuelle : attendez le rendu de la premiere image.", PremiumYellow); return null; }
+            SetFixedFrame(frame, true);
+            Debug.Log("[Virtual Camera] Captured rendered frame " + frame.width + "x" + frame.height + " / " + fixedFrameBytes.Length
+                + " PNG bytes / frame " + FrameIdentity + " / SHA256 " + FrameSha256);
+            return fixedFrameBytes;
         }
-        catch (Exception e)
+        catch (Exception error)
         {
-            ShowStatus("Capture caméra impossible : " + e.Message, PremiumRed);
-            Debug.LogError("[Camera] Capture failed: " + e);
+            ShowStatus("Capture virtuelle impossible : " + error.Message, PremiumRed);
             return null;
         }
     }
@@ -680,16 +942,41 @@ public partial class LotoUIController : MonoBehaviour
         return signaturePad != null && signaturePad.HasInk ? signaturePad.EncodeToPng() : null;
     }
 
-    private string MaintenanceCalibrationKey(string axis)
+    private string MaintenanceCalibrationKey(string axis, string componentId = null)
     {
         string machineId = lotoClient != null && !string.IsNullOrEmpty(lotoClient.activeMachineId)
             ? lotoClient.activeMachineId
             : "default";
-        return "SmartLOTO.MaintenanceGuide." + machineId + "." + axis;
+        return "SmartLOTO.MaintenanceGuide." + Uri.EscapeDataString(machineId) + "."
+            + Uri.EscapeDataString(componentId ?? CalibrationComponentId) + "." + axis;
+    }
+
+    public bool TryGetVirtualComponentPoint(string componentId, out Vector3 worldPoint)
+    {
+        worldPoint = Vector3.zero;
+        if (sourceSequence == null || string.IsNullOrEmpty(componentId)) return false;
+        string x = MaintenanceCalibrationKey("model.x", componentId);
+        string y = MaintenanceCalibrationKey("model.y", componentId);
+        string z = MaintenanceCalibrationKey("model.z", componentId);
+        if (!PlayerPrefs.HasKey(x) || !PlayerPrefs.HasKey(y) || !PlayerPrefs.HasKey(z))
+        {
+            // Authored scene targets can supply guidance before the first calibration.
+            foreach (var target in sourceSequence.GetComponentsInChildren<Transform>(true))
+                if (target != sourceSequence.transform && target.name == componentId)
+                { worldPoint = target.position; return true; }
+            return false;
+        }
+        worldPoint = sourceSequence.transform.TransformPoint(new Vector3(
+            PlayerPrefs.GetFloat(x), PlayerPrefs.GetFloat(y), PlayerPrefs.GetFloat(z)));
+        return true;
     }
 
     private void LoadMaintenanceCalibration()
     {
+        maintenanceComponentButton.interactable = calibrationComponents.Length > 1;
+        maintenanceComponentButton.GetComponentInChildren<Text>().text = calibrationComponents.Length == 0
+            ? "Aucun composant à calibrer" : calibrationComponents[calibrationComponentIndex].tag + " · "
+                + calibrationComponents[calibrationComponentIndex].component_name + " (suivant)";
         string xKey = MaintenanceCalibrationKey("x");
         string yKey = MaintenanceCalibrationKey("y");
         maintenanceTargetCalibrated = PlayerPrefs.HasKey(xKey) && PlayerPrefs.HasKey(yKey);
@@ -703,7 +990,13 @@ public partial class LotoUIController : MonoBehaviour
 
     private void CalibrateMaintenanceTargetFromPointer(PointerEventData pointer)
     {
-        if (maintenancePreviewImage == null || !maintenancePanel.activeSelf || !webcamReady)
+        if (maintenancePreviewImage != null && maintenancePreviewImage.texture is RenderTexture
+            && (!IsVirtualCameraSource || sourceSequence == null))
+        {
+            ShowStatus("Un repère écran ne suit pas la maquette. Utilisez le mode image TEST ou un suivi AR validé.", PremiumYellow);
+            return;
+        }
+        if (maintenancePreviewImage == null || !maintenancePanel.activeSelf || !virtualCameraReady || string.IsNullOrEmpty(CalibrationComponentId))
             return;
 
         if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
@@ -711,9 +1004,27 @@ public partial class LotoUIController : MonoBehaviour
             return;
 
         Rect rect = maintenancePreviewImage.rectTransform.rect;
-        if (rect.width <= 0 || rect.height <= 0) return;
+        if (rect.width <= 0 || rect.height <= 0 || !rect.Contains(localPoint)) return;
         maintenanceTargetX = Mathf.Clamp01((localPoint.x - rect.xMin) / rect.width);
         maintenanceTargetY = Mathf.Clamp01((localPoint.y - rect.yMin) / rect.height);
+        if (maintenancePreviewImage.texture is RenderTexture)
+        {
+            Rect uv = maintenancePreviewImage.uvRect;
+            Ray ray = virtualCaptureCamera.ViewportPointToRay(new Vector3(
+                uv.x + maintenanceTargetX * uv.width, uv.y + maintenanceTargetY * uv.height, 0f));
+            Transform model = sourceSequence.transform;
+            Plane plane = new Plane(model.forward, model.position);
+            if (!plane.Raycast(ray, out float distance)) return;
+            Vector3 point = model.InverseTransformPoint(ray.GetPoint(distance));
+            if (Mathf.Abs(point.x) > .5f || Mathf.Abs(point.y) > .5f)
+            {
+                ShowStatus("Cliquez sur la maquette pour placer le repère.", PremiumYellow);
+                return;
+            }
+            PlayerPrefs.SetFloat(MaintenanceCalibrationKey("model.x"), point.x);
+            PlayerPrefs.SetFloat(MaintenanceCalibrationKey("model.y"), point.y);
+            PlayerPrefs.SetFloat(MaintenanceCalibrationKey("model.z"), point.z);
+        }
         maintenanceTargetCalibrated = true;
         PlayerPrefs.SetFloat(MaintenanceCalibrationKey("x"), maintenanceTargetX);
         PlayerPrefs.SetFloat(MaintenanceCalibrationKey("y"), maintenanceTargetY);
@@ -727,17 +1038,42 @@ public partial class LotoUIController : MonoBehaviour
         if (maintenanceArrowLine == null || maintenanceArrowHead == null || maintenancePreviewImage == null)
             return;
 
-        bool showGuide = webcamReady && maintenanceTargetCalibrated;
+        bool live = maintenancePreviewImage.texture is RenderTexture;
+        bool liveUntracked = live && (!IsVirtualCameraSource || sourceSequence == null);
+        bool targetVisible = true;
+        if (live && !liveUntracked)
+        {
+            maintenanceTargetCalibrated = TryGetVirtualComponentPoint(CalibrationComponentId, out Vector3 worldPoint);
+            if (maintenanceTargetCalibrated)
+            {
+                Vector3 viewport = virtualCaptureCamera.WorldToViewportPoint(worldPoint);
+                Rect uv = maintenancePreviewImage.uvRect;
+                targetVisible = viewport.z > 0f && uv.width != 0f && uv.height != 0f;
+                if (targetVisible)
+                {
+                    maintenanceTargetX = (viewport.x - uv.x) / uv.width;
+                    maintenanceTargetY = (viewport.y - uv.y) / uv.height;
+                    targetVisible = maintenanceTargetX >= 0f && maintenanceTargetX <= 1f
+                        && maintenanceTargetY >= 0f && maintenanceTargetY <= 1f;
+                }
+            }
+        }
+        bool showGuide = virtualCameraReady && maintenanceTargetCalibrated && !liveUntracked && targetVisible;
         maintenanceArrowLine.gameObject.SetActive(showGuide);
         maintenanceArrowHead.gameObject.SetActive(showGuide);
-        if (!webcamReady)
+        if (liveUntracked)
+        {
+            maintenanceCalibrationText.text = "Flux caméra : aucun suivi AR validé. Calibration 2D disponible sur image en mode TEST.";
+            return;
+        }
+        if (!virtualCameraReady)
         {
             maintenanceCalibrationText.text = "Caméra indisponible : le repère ne peut pas être calibré.";
             return;
         }
         if (!maintenanceTargetCalibrated)
         {
-            maintenanceCalibrationText.text = "Cliquez sur l'ampoule dans l'image pour calibrer le repère de cette maquette.";
+            maintenanceCalibrationText.text = "Sélectionnez le composant, puis cliquez sur sa position dans l'image : " + CalibrationComponentId;
             return;
         }
 
@@ -767,6 +1103,10 @@ public partial class LotoUIController : MonoBehaviour
 
     private void Update()
     {
+        HandleOperatorLookInput();
+        UpdateVirtualCameraSettings();
+        UpdateARGazeQRScan();
+        if (maintenancePanel != null && maintenancePanel.activeSelf) UpdateMaintenanceGuideVisuals();
         if (qrScanPanel != null && qrScanPanel.activeSelf && scanLaserLine != null)
         {
             Vector3 pos = scanLaserLine.localPosition;
@@ -792,12 +1132,357 @@ public partial class LotoUIController : MonoBehaviour
         }
     }
 
+    private void HandleOperatorLookInput()
+    {
+        if (virtualSourceCamera == null) return;
+        var keyboard = Keyboard.current;
+        var mouse = Mouse.current;
+
+        // Reset view orientation with R key
+        if (keyboard != null && keyboard.rKey.wasPressedThisFrame)
+        {
+            if (!IsTextInputFocused && !IsModifierPressed(keyboard))
+            {
+                if (gazeRecenterCoroutine != null) { StopCoroutine(gazeRecenterCoroutine); gazeRecenterCoroutine = null; }
+                currentPitch = 0f;
+                currentYaw = 0f;
+                virtualSourceCamera.transform.localRotation = initialCameraLocalRot;
+            }
+        }
+
+        // Mouse Look with right button held
+        if (mouse != null)
+        {
+            if (mouse.rightButton.wasPressedThisFrame && !IsTextInputFocused)
+            {
+                if (gazeRecenterCoroutine != null) { StopCoroutine(gazeRecenterCoroutine); gazeRecenterCoroutine = null; }
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
+            }
+            else if (mouse.rightButton.isPressed && !IsTextInputFocused)
+            {
+                Vector2 delta = mouse.delta.ReadValue();
+                if (delta.sqrMagnitude > 0.0001f)
+                {
+                    float sensitivity = 0.12f;
+                    currentYaw += delta.x * sensitivity;
+                    currentPitch -= delta.y * sensitivity;
+
+                    currentPitch = Mathf.Clamp(currentPitch, -35f, 35f);
+                    currentYaw = Mathf.Clamp(currentYaw, -45f, 45f);
+
+                    virtualSourceCamera.transform.localRotation = initialCameraLocalRot * Quaternion.Euler(currentPitch, currentYaw, 0f);
+                }
+            }
+            else if (mouse.rightButton.wasReleasedThisFrame)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+            else if (!mouse.rightButton.isPressed && Cursor.lockState != CursorLockMode.None)
+            {
+                Cursor.lockState = CursorLockMode.None;
+                Cursor.visible = true;
+            }
+        }
+    }
+
+    private bool IsModifierPressed(Keyboard keyboard)
+    {
+        if (keyboard == null) return false;
+        return keyboard.ctrlKey.isPressed
+            || keyboard.altKey.isPressed
+            || keyboard.leftMetaKey.isPressed
+            || keyboard.rightMetaKey.isPressed;
+    }
+
+    private void OnDisable()
+    {
+        CancelStepGuidance();
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+    }
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (!hasFocus)
+        {
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+    }
+
+    private void EnsureWorkbenchSurface()
+    {
+        if (workbenchObject != null) return;
+
+        // Plateau principal de l'établi : 1.80m large (X) x 0.04m épaisseur (Y) x 1.00m profondeur (Z)
+        workbenchObject = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        workbenchObject.name = "WorkbenchSurface";
+        // Centre de l'établi : X = -0.18m (sous maquette + QR), Y = 0.93m (surface supérieure à 0.95m), Z = 1.45m
+        workbenchObject.transform.position = new Vector3(-0.18f, 0.93f, 1.45f);
+        workbenchObject.transform.localScale = new Vector3(1.80f, 0.04f, 1.00f);
+
+        // Matériau gris industriel clair/moyen (Color(0.22f, 0.25f, 0.29f))
+        var renderer = workbenchObject.GetComponent<MeshRenderer>();
+        if (renderer != null)
+        {
+            Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+            if (shader == null) shader = Shader.Find("Standard");
+            if (shader == null) shader = Shader.Find("Diffuse");
+            Material tableMat = new Material(shader);
+            tableMat.color = new Color(0.22f, 0.25f, 0.29f);
+            renderer.material = tableMat;
+        }
+
+        // Bordure avant subtile pour détacher nettement l'établi du fond sombre
+        var edgeObj = GameObject.CreatePrimitive(PrimitiveType.Cube);
+        edgeObj.name = "WorkbenchFrontEdge";
+        edgeObj.transform.SetParent(workbenchObject.transform, false);
+        edgeObj.transform.localPosition = new Vector3(0f, 0.2f, -0.495f);
+        edgeObj.transform.localScale = new Vector3(1.002f, 0.6f, 0.015f);
+        var edgeRenderer = edgeObj.GetComponent<MeshRenderer>();
+        if (edgeRenderer != null)
+        {
+            Material edgeMat = new Material(renderer != null ? renderer.material.shader : Shader.Find("Diffuse"));
+            edgeMat.color = new Color(0.32f, 0.36f, 0.42f);
+            edgeRenderer.material = edgeMat;
+        }
+
+        var col = workbenchObject.GetComponent<Collider>();
+        if (col != null) Destroy(col);
+        var edgeCol = edgeObj.GetComponent<Collider>();
+        if (edgeCol != null) Destroy(edgeCol);
+    }
+
+    private void EnsureVirtualQRCodeTag()
+    {
+        if (virtualQrEasel != null && virtualQrTag != null) return;
+
+        // 1. Racine du chevalet QR posé sur l'établi à gauche de la maquette (X=-0.72m, Y=0.95m, Z=1.42m)
+        // Bien séparé de la maquette (~43 cm du bord gauche)
+        if (virtualQrEasel == null)
+        {
+            virtualQrEasel = new GameObject("VirtualQREasel");
+            virtualQrEasel.transform.position = new Vector3(-0.72f, 0.95f, 1.42f);
+
+            // Orientation symétrique vers la caméra opérateur avec Roll = 0 strict (aucun angle tordu en losange)
+            Vector3 camPos = virtualSourceCamera != null ? virtualSourceCamera.transform.position : new Vector3(0f, 1.38f, 0.95f);
+            Vector3 dirToCam = (camPos - (virtualQrEasel.transform.position + new Vector3(0f, 0.12f, 0f))).normalized;
+            virtualQrEasel.transform.rotation = Quaternion.LookRotation(dirToCam, Vector3.up);
+
+            // 2. Socle / base posée sur l'établi (Cube plat gris anthracite)
+            GameObject baseFoot = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            baseFoot.name = "QREaselBase";
+            baseFoot.transform.SetParent(virtualQrEasel.transform, false);
+            baseFoot.transform.localPosition = new Vector3(0f, 0.008f, 0f);
+            baseFoot.transform.localScale = new Vector3(0.20f, 0.016f, 0.12f);
+            var baseRenderer = baseFoot.GetComponent<MeshRenderer>();
+            if (baseRenderer != null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+                if (shader == null) shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
+                Material baseMat = new Material(shader);
+                baseMat.color = new Color(0.14f, 0.17f, 0.21f);
+                baseRenderer.material = baseMat;
+            }
+            var baseCol = baseFoot.GetComponent<Collider>();
+            if (baseCol != null) Destroy(baseCol);
+
+            // 3. Panneau dorsal / chevalet incliné
+            GameObject backboard = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            backboard.name = "QREaselBackboard";
+            backboard.transform.SetParent(virtualQrEasel.transform, false);
+            backboard.transform.localPosition = new Vector3(0f, 0.12f, 0f);
+            backboard.transform.localScale = new Vector3(0.18f, 0.225f, 0.012f);
+            var backRenderer = backboard.GetComponent<MeshRenderer>();
+            if (backRenderer != null)
+            {
+                Shader shader = Shader.Find("Universal Render Pipeline/Lit");
+                if (shader == null) shader = Shader.Find("Standard");
+                if (shader == null) shader = Shader.Find("Diffuse");
+                Material backMat = new Material(shader);
+                backMat.color = new Color(0.10f, 0.13f, 0.17f);
+                backRenderer.material = backMat;
+            }
+            var backCol = backboard.GetComponent<Collider>();
+            if (backCol != null) Destroy(backCol);
+
+            // 4. Quad QR Code haute netteté sur la face avant du chevalet
+            virtualQrTag = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            virtualQrTag.name = "VirtualQRCodeTag";
+            virtualQrTag.transform.SetParent(backboard.transform, false);
+            virtualQrTag.transform.localPosition = new Vector3(0f, 0f, 0.55f);
+            virtualQrTag.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+            virtualQrTag.transform.localScale = new Vector3(0.92f, 0.92f, 1f);
+
+            string qrPath = Path.Combine(Application.streamingAssetsPath, "QRCode_SL-POC-01.png");
+            Texture2D qrTex = null;
+            if (File.Exists(qrPath))
+            {
+                byte[] bytes = File.ReadAllBytes(qrPath);
+                qrTex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                qrTex.LoadImage(bytes);
+            }
+
+            var qrRenderer = virtualQrTag.GetComponent<MeshRenderer>();
+            if (qrRenderer != null)
+            {
+                Shader shader = Shader.Find("Unlit/Texture");
+                if (shader == null) shader = Shader.Find("Standard");
+                Material mat = new Material(shader != null ? shader : Shader.Find("Diffuse"));
+                if (qrTex != null) mat.mainTexture = qrTex;
+                qrRenderer.material = mat;
+            }
+
+            var qrCol = virtualQrTag.GetComponent<Collider>();
+            if (qrCol != null) Destroy(qrCol);
+        }
+    }
+
+    private void UpdateARGazeQRScan()
+    {
+        if (qrScanCompleted)
+        {
+            if (qrReticleObject != null && qrReticleObject.activeSelf)
+                qrReticleObject.SetActive(false);
+            return;
+        }
+
+        bool isInitialScreen = (welcomePanel != null && welcomePanel.activeSelf) || (qrScanPanel != null && qrScanPanel.activeSelf);
+        if (!isInitialScreen)
+        {
+            if (qrReticleObject != null && qrReticleObject.activeSelf)
+                qrReticleObject.SetActive(false);
+            return;
+        }
+
+        if (virtualQrTag == null)
+        {
+            EnsureVirtualQRCodeTag();
+            if (virtualQrTag == null) return;
+        }
+
+        if (qrReticleObject != null && !qrReticleObject.activeSelf)
+            qrReticleObject.SetActive(true);
+
+        if (virtualSourceCamera == null) return;
+
+        Vector3 vp = virtualSourceCamera.WorldToViewportPoint(virtualQrTag.transform.position);
+        bool isLookingAtQR = vp.z > 0f && Vector2.Distance(new Vector2(vp.x, vp.y), new Vector2(0.5f, 0.5f)) < 0.16f;
+
+        if (isLookingAtQR)
+        {
+            qrGazeDwellTimer += Time.deltaTime;
+            float progress = Mathf.Clamp01(qrGazeDwellTimer / QR_GAZE_DWELL_TARGET);
+            if (qrReticleProgressImage != null)
+            {
+                qrReticleProgressImage.fillAmount = progress;
+                qrReticleProgressImage.color = Color.Lerp(PremiumBlue, PremiumTeal, progress);
+            }
+
+            if (qrGazeDwellTimer >= QR_GAZE_DWELL_TARGET)
+            {
+                qrGazeDwellTimer = 0f;
+                StartInterventionFromQR("SL-POC-01");
+            }
+        }
+        else
+        {
+            qrGazeDwellTimer = Mathf.Max(0f, qrGazeDwellTimer - Time.deltaTime * 2f);
+            if (qrReticleProgressImage != null)
+            {
+                qrReticleProgressImage.fillAmount = qrGazeDwellTimer / QR_GAZE_DWELL_TARGET;
+                qrReticleProgressImage.color = PremiumBlue;
+            }
+        }
+    }
+
+    private IEnumerator SmoothRecenterGaze(float duration = 0.5f)
+    {
+        float elapsed = 0f;
+        float startYaw = currentYaw;
+        float startPitch = currentPitch;
+
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.SmoothStep(0f, 1f, elapsed / duration);
+            currentYaw = Mathf.Lerp(startYaw, 0f, t);
+            currentPitch = Mathf.Lerp(startPitch, 0f, t);
+            if (virtualSourceCamera != null)
+            {
+                virtualSourceCamera.transform.localRotation = initialCameraLocalRot * Quaternion.Euler(currentPitch, currentYaw, 0f);
+            }
+            yield return null;
+        }
+
+        currentYaw = 0f;
+        currentPitch = 0f;
+        if (virtualSourceCamera != null)
+        {
+            virtualSourceCamera.transform.localRotation = initialCameraLocalRot;
+        }
+        gazeRecenterCoroutine = null;
+    }
+
+    public void StartInterventionFromQR(string code)
+    {
+        if (qrScanCompleted) return;
+        code = LotoQRScanner.ExtractProcedureId(code) ?? code;
+        SelectMachineById(code);
+        lotoManager.EnsureVirtualMaquetteVisible();
+
+        ShowStatus($"QR Code détecté : {code}. Initialisation...", PremiumBlue);
+        if (qrReticleObject != null) qrReticleObject.SetActive(false);
+
+        // Recentrage automatique fluide du regard vers le cadrage central de la maquette
+        if (gazeRecenterCoroutine != null) StopCoroutine(gazeRecenterCoroutine);
+        gazeRecenterCoroutine = StartCoroutine(SmoothRecenterGaze(0.5f));
+
+        if (lotoClient != null)
+        {
+            lotoClient.StartIntervention(code,
+                () =>
+                {
+                    qrScanCompleted = true;
+                    ShowPanel(stepPanel);
+                    ShowStatus("Procédure SL-POC-01 chargée par scan QR — Poste prêt pour vérification.", PremiumGreen);
+                },
+                (error) =>
+                {
+                    string localContract = Path.Combine(Application.streamingAssetsPath, $"{code}_unity_contract.json");
+                    if (File.Exists(localContract))
+                    {
+                        try
+                        {
+                            var proc = SmartLOTOClient.ParseProcedure(File.ReadAllText(localContract));
+                            lotoManager.InitializeProcedure(proc);
+                            qrScanCompleted = true;
+                            ShowPanel(stepPanel);
+                            ShowStatus("Procédure SL-POC-01 chargée par scan QR — Poste prêt pour vérification.", PremiumGreen);
+                            return;
+                        }
+                        catch {}
+                    }
+                    ShowStatus($"Échec initialisation {code} : {error}", PremiumRed);
+                    if (qrReticleObject != null) qrReticleObject.SetActive(true);
+                }
+            );
+        }
+    }
+
     private void OnDestroy()
     {
+        if (fixedFrame != null) Destroy(fixedFrame);
+        if (virtualQrEasel != null) Destroy(virtualQrEasel);
+        else if (virtualQrTag != null) Destroy(virtualQrTag);
+        if (workbenchObject != null) Destroy(workbenchObject);
+        if (sourceSequence != null) sourceSequence.TextureChanged -= OnVirtualTextureChanged;
+        if (virtualCaptureCamera != null) { virtualCaptureCamera.enabled = false; Destroy(virtualCaptureCamera.gameObject); }
+        if (ownsVirtualTarget && virtualRenderTexture != null)
+        { virtualRenderTexture.Release(); Destroy(virtualRenderTexture); }
         DisposeRedesignedView();
-        if (webcamTexture != null)
-        {
-            webcamTexture.Stop();
-        }
     }
 }

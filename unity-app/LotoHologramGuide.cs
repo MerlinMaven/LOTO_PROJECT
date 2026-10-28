@@ -10,9 +10,40 @@ public class LotoHologramGuide : MonoBehaviour
 
     private GameObject arrowVisual;
     private Vector3 baseLocalPosition;
+    private bool surfaceGuide;
+    private Mesh surfaceMesh;
+    private Material surfaceMaterial;
+
+    public void AttachToSurface(Transform model, Vector3 localPoint)
+    {
+        surfaceGuide = true;
+        transform.SetParent(model, false);
+        transform.localPosition = new Vector3(localPoint.x, localPoint.y, 0f);
+        transform.localRotation = Quaternion.identity;
+        Vector3 scale = model.lossyScale;
+        transform.localScale = new Vector3(1f / Mathf.Max(Mathf.Abs(scale.x), .0001f),
+            1f / Mathf.Max(Mathf.Abs(scale.y), .0001f), 1f / Mathf.Max(Mathf.Abs(scale.z), .0001f));
+    }
 
     private void Start()
     {
+        if (surfaceGuide)
+        {
+            surfaceMesh = new Mesh { name = "POI arrow on model" };
+            surfaceMesh.vertices = new[] {
+                new Vector3(0, 0, -.002f), new Vector3(.006f, .018f, -.002f),
+                new Vector3(.018f, .006f, -.002f), new Vector3(.010f, .014f, -.002f),
+                new Vector3(.026f, .030f, -.002f), new Vector3(.030f, .026f, -.002f),
+                new Vector3(.014f, .010f, -.002f) };
+            surfaceMesh.triangles = new[] { 0, 1, 2, 3, 4, 5, 3, 5, 6 };
+            surfaceMesh.RecalculateBounds();
+            gameObject.AddComponent<MeshFilter>().sharedMesh = surfaceMesh;
+            Shader shader = Shader.Find("Sprites/Default");
+            if (shader == null) return;
+            surfaceMaterial = new Material(shader) { color = Color.yellow };
+            gameObject.AddComponent<MeshRenderer>().sharedMaterial = surfaceMaterial;
+            return;
+        }
         baseLocalPosition = transform.localPosition;
         CreateArrowVisual();
     }
@@ -54,11 +85,18 @@ public class LotoHologramGuide : MonoBehaviour
 
     private void Update()
     {
+        if (surfaceGuide) return;
         // Bouncing animation
         float newY = baseLocalPosition.y + Mathf.Sin(Time.time * bounceSpeed) * bounceHeight;
         transform.localPosition = new Vector3(baseLocalPosition.x, newY, baseLocalPosition.z);
 
         // Rotation animation
         transform.Rotate(Vector3.up, rotateSpeed * Time.deltaTime, Space.World);
+    }
+
+    private void OnDestroy()
+    {
+        if (surfaceMesh != null) Destroy(surfaceMesh);
+        if (surfaceMaterial != null) Destroy(surfaceMaterial);
     }
 }

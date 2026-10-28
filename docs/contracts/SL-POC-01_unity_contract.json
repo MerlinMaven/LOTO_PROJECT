@@ -529,8 +529,7 @@
               "verification": {
                 "method": "visual_observation",
                 "criteria": [
-                  "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)",
-                  "Critère validé : c'est incandescente"
+                  "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)"
                 ],
                 "required_evidence": [
                   "photographie de l'interrupteur en position basse avec repère OFF lisible"
@@ -567,8 +566,7 @@
               "verification": {
                 "method": "visual_observation",
                 "criteria": [
-                  "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)",
-                  "Critère validé : c'est incandescente"
+                  "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)"
                 ],
                 "required_evidence": [
                   "photographie de l'interrupteur en position basse avec repère OFF lisible"
@@ -614,10 +612,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Logement droit de C03 (marqué +/−) est vide",
-                  "Pile cylindrique visible dans la boîte C04",
-                  "Critère validé : c'est incandescente",
-                  "Critère validé : Oui c'est 3V",
-                  "Critère validé : maintenant non"
+                  "Pile cylindrique visible dans la boîte C04"
                 ],
                 "required_evidence": [
                   "photographie du support de pile vide",
@@ -660,10 +655,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Logement droit de C03 (marqué +/−) est vide",
-                  "Pile cylindrique visible dans la boîte C04",
-                  "Critère validé : c'est incandescente",
-                  "Critère validé : Oui c'est 3V",
-                  "Critère validé : maintenant non"
+                  "Pile cylindrique visible dans la boîte C04"
                 ],
                 "required_evidence": [
                   "photographie du support de pile vide",
@@ -703,14 +695,13 @@
               ],
               "primary_component": "C06",
               "vision_prompt": "c06",
-              "completion_check": "c'est incandescente",
+              "completion_check": "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)",
               "expected_result": "Absence de tension mesurée aux bornes du composant lumineux C06.",
               "spatial_guide": "",
               "verification": {
                 "method": "measurement",
                 "criteria": [
-                  "c'est incandescente",
-                  "Critère validé : Oui c'est 3V"
+                  "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)"
                 ],
                 "required_evidence": [
                   "valeur de tension mesurée",
@@ -744,14 +735,13 @@
               ],
               "primary_component": "C06",
               "vision_prompt": "c06",
-              "completion_check": "c'est incandescente",
+              "completion_check": "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)",
               "expected_result": "Absence de tension mesurée aux bornes du composant lumineux C06.",
               "spatial_guide": "",
               "verification": {
                 "method": "measurement",
                 "criteria": [
-                  "c'est incandescente",
-                  "Critère validé : Oui c'est 3V"
+                  "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)"
                 ],
                 "required_evidence": [
                   "valeur de tension mesurée",
@@ -808,8 +798,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Carré blanc du carter aligné avec le cercle vide C07",
-                  "Zone de la lampe visuellement dégagée",
-                  "Critère validé : vers le bas , cest par hauteur"
+                  "Zone de la lampe visuellement dégagée"
                 ],
                 "required_evidence": [
                   "photographie du carré blanc aligné avec le cercle vide",
@@ -852,8 +841,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Carré blanc du carter aligné avec le cercle vide C07",
-                  "Zone de la lampe visuellement dégagée",
-                  "Critère validé : vers le bas , cest par hauteur"
+                  "Zone de la lampe visuellement dégagée"
                 ],
                 "required_evidence": [
                   "photographie du carré blanc aligné avec le cercle vide",
@@ -910,9 +898,7 @@
                 "method": "human_confirmation",
                 "criteria": [
                   "Lampe de remplacement en place",
-                  "Mode de fixation conforme à la technologie confirmée",
-                  "Critère validé : c'est incandescente",
-                  "Critère validé : maintenant non"
+                  "Mode de fixation conforme à la technologie confirmée"
                 ],
                 "required_evidence": [
                   "photographie de la lampe de remplacement en place",
@@ -953,9 +939,7 @@
                 "method": "human_confirmation",
                 "criteria": [
                   "Lampe de remplacement en place",
-                  "Mode de fixation conforme à la technologie confirmée",
-                  "Critère validé : c'est incandescente",
-                  "Critère validé : maintenant non"
+                  "Mode de fixation conforme à la technologie confirmée"
                 ],
                 "required_evidence": [
                   "photographie de la lampe de remplacement en place",
@@ -1012,8 +996,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Carré blanc du carter aligné avec le cercle noir plein C07",
-                  "Zone de la lampe visuellement recouverte",
-                  "Critère validé : vers le bas , cest par hauteur"
+                  "Zone de la lampe visuellement recouverte"
                 ],
                 "required_evidence": [
                   "photographie du carré blanc aligné avec le cercle noir plein",
@@ -1056,8 +1039,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Carré blanc du carter aligné avec le cercle noir plein C07",
-                  "Zone de la lampe visuellement recouverte",
-                  "Critère validé : vers le bas , cest par hauteur"
+                  "Zone de la lampe visuellement recouverte"
                 ],
                 "required_evidence": [
                   "photographie du carré blanc aligné avec le cercle noir plein",
@@ -1106,8 +1088,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Pile cylindrique visible dans le logement droit de C03 (marqué +/−)",
-                  "Polarité conforme aux marques du support",
-                  "Critère validé : Oui c'est 3V"
+                  "Polarité conforme aux marques du support"
                 ],
                 "required_evidence": [
                   "photographie de la pile dans le logement fonctionnel avec marques +/− visibles"
@@ -1148,8 +1129,7 @@
                 "method": "visual_observation",
                 "criteria": [
                   "Pile cylindrique visible dans le logement droit de C03 (marqué +/−)",
-                  "Polarité conforme aux marques du support",
-                  "Critère validé : Oui c'est 3V"
+                  "Polarité conforme aux marques du support"
                 ],
                 "required_evidence": [
                   "photographie de la pile dans le logement fonctionnel avec marques +/− visibles"
@@ -2616,8 +2596,7 @@
                 "verification": {
                   "method": "visual_observation",
                   "criteria": [
-                    "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)",
-                    "Critère validé : c'est incandescente"
+                    "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)"
                   ],
                   "required_evidence": [
                     "photographie de l'interrupteur en position basse avec repère OFF lisible"
@@ -2654,8 +2633,7 @@
                 "verification": {
                   "method": "visual_observation",
                   "criteria": [
-                    "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)",
-                    "Critère validé : c'est incandescente"
+                    "Bascule de l'interrupteur en position basse sur le châssis (repère OFF visible)"
                   ],
                   "required_evidence": [
                     "photographie de l'interrupteur en position basse avec repère OFF lisible"
@@ -2701,10 +2679,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Logement droit de C03 (marqué +/−) est vide",
-                    "Pile cylindrique visible dans la boîte C04",
-                    "Critère validé : c'est incandescente",
-                    "Critère validé : Oui c'est 3V",
-                    "Critère validé : maintenant non"
+                    "Pile cylindrique visible dans la boîte C04"
                   ],
                   "required_evidence": [
                     "photographie du support de pile vide",
@@ -2747,10 +2722,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Logement droit de C03 (marqué +/−) est vide",
-                    "Pile cylindrique visible dans la boîte C04",
-                    "Critère validé : c'est incandescente",
-                    "Critère validé : Oui c'est 3V",
-                    "Critère validé : maintenant non"
+                    "Pile cylindrique visible dans la boîte C04"
                   ],
                   "required_evidence": [
                     "photographie du support de pile vide",
@@ -2790,14 +2762,13 @@
                 ],
                 "primary_component": "C06",
                 "vision_prompt": "c06",
-                "completion_check": "c'est incandescente",
+                "completion_check": "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)",
                 "expected_result": "Absence de tension mesurée aux bornes du composant lumineux C06.",
                 "spatial_guide": "",
                 "verification": {
                   "method": "measurement",
                   "criteria": [
-                    "c'est incandescente",
-                    "Critère validé : Oui c'est 3V"
+                    "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)"
                   ],
                   "required_evidence": [
                     "valeur de tension mesurée",
@@ -2831,14 +2802,13 @@
                 ],
                 "primary_component": "C06",
                 "vision_prompt": "c06",
-                "completion_check": "c'est incandescente",
+                "completion_check": "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)",
                 "expected_result": "Absence de tension mesurée aux bornes du composant lumineux C06.",
                 "spatial_guide": "",
                 "verification": {
                   "method": "measurement",
                   "criteria": [
-                    "c'est incandescente",
-                    "Critère validé : Oui c'est 3V"
+                    "Tension mesurée aux bornes de la lampe égale à 0 V (absence de tension)"
                   ],
                   "required_evidence": [
                     "valeur de tension mesurée",
@@ -2895,8 +2865,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Carré blanc du carter aligné avec le cercle vide C07",
-                    "Zone de la lampe visuellement dégagée",
-                    "Critère validé : vers le bas , cest par hauteur"
+                    "Zone de la lampe visuellement dégagée"
                   ],
                   "required_evidence": [
                     "photographie du carré blanc aligné avec le cercle vide",
@@ -2939,8 +2908,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Carré blanc du carter aligné avec le cercle vide C07",
-                    "Zone de la lampe visuellement dégagée",
-                    "Critère validé : vers le bas , cest par hauteur"
+                    "Zone de la lampe visuellement dégagée"
                   ],
                   "required_evidence": [
                     "photographie du carré blanc aligné avec le cercle vide",
@@ -2997,9 +2965,7 @@
                   "method": "human_confirmation",
                   "criteria": [
                     "Lampe de remplacement en place",
-                    "Mode de fixation conforme à la technologie confirmée",
-                    "Critère validé : c'est incandescente",
-                    "Critère validé : maintenant non"
+                    "Mode de fixation conforme à la technologie confirmée"
                   ],
                   "required_evidence": [
                     "photographie de la lampe de remplacement en place",
@@ -3040,9 +3006,7 @@
                   "method": "human_confirmation",
                   "criteria": [
                     "Lampe de remplacement en place",
-                    "Mode de fixation conforme à la technologie confirmée",
-                    "Critère validé : c'est incandescente",
-                    "Critère validé : maintenant non"
+                    "Mode de fixation conforme à la technologie confirmée"
                   ],
                   "required_evidence": [
                     "photographie de la lampe de remplacement en place",
@@ -3099,8 +3063,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Carré blanc du carter aligné avec le cercle noir plein C07",
-                    "Zone de la lampe visuellement recouverte",
-                    "Critère validé : vers le bas , cest par hauteur"
+                    "Zone de la lampe visuellement recouverte"
                   ],
                   "required_evidence": [
                     "photographie du carré blanc aligné avec le cercle noir plein",
@@ -3143,8 +3106,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Carré blanc du carter aligné avec le cercle noir plein C07",
-                    "Zone de la lampe visuellement recouverte",
-                    "Critère validé : vers le bas , cest par hauteur"
+                    "Zone de la lampe visuellement recouverte"
                   ],
                   "required_evidence": [
                     "photographie du carré blanc aligné avec le cercle noir plein",
@@ -3193,8 +3155,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Pile cylindrique visible dans le logement droit de C03 (marqué +/−)",
-                    "Polarité conforme aux marques du support",
-                    "Critère validé : Oui c'est 3V"
+                    "Polarité conforme aux marques du support"
                   ],
                   "required_evidence": [
                     "photographie de la pile dans le logement fonctionnel avec marques +/− visibles"
@@ -3235,8 +3196,7 @@
                   "method": "visual_observation",
                   "criteria": [
                     "Pile cylindrique visible dans le logement droit de C03 (marqué +/−)",
-                    "Polarité conforme aux marques du support",
-                    "Critère validé : Oui c'est 3V"
+                    "Polarité conforme aux marques du support"
                   ],
                   "required_evidence": [
                     "photographie de la pile dans le logement fonctionnel avec marques +/− visibles"

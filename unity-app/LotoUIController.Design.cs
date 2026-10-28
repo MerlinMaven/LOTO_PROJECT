@@ -12,10 +12,12 @@ public partial class LotoUIController
     private RectTransform safeRoot;
     private GameObject generatedView;
     private Sprite panelSprite;
-    private readonly Color ink = new Color32(12, 22, 31, 255);
-    private readonly Color surface = new Color32(22, 38, 50, 255);
-    private readonly Color muted = new Color32(175, 194, 204, 255);
-    private readonly Color accent = new Color32(91, 225, 196, 255);
+    private readonly Color ink = new Color32(11, 19, 30, 255);
+    private readonly Color hudGlass = new Color32(11, 19, 30, 184);
+    private readonly Color surface = new Color32(22, 38, 50, 235);
+    private readonly Color muted = new Color32(176, 199, 211, 255);
+    private readonly Color accent = new Color32(94, 234, 212, 255);
+    private readonly Color hudText = new Color32(224, 242, 254, 255);
 
     private void Awake()
     {
@@ -47,7 +49,7 @@ public partial class LotoUIController
         safeRoot = Node("Safe area", generatedView.transform);
         Fit(safeRoot, 0, 0, 1, 1);
         ApplySafeArea();
-        if (FindObjectOfType<EventSystem>() == null)
+        if (FindAnyObjectByType<EventSystem>() == null)
         {
             var events = new GameObject("SmartLoto EventSystem", typeof(EventSystem));
 #if ENABLE_INPUT_SYSTEM
@@ -57,20 +59,31 @@ public partial class LotoUIController
 #endif
         }
 
-        var header = Box("Header", safeRoot, ink, .02f, .89f, .98f, .98f);
-        Label(header, "SMART / LOTO", 27, Color.white, .025f, .15f, .4f, .85f);
-        Label(header, "ASSISTANCE OPÉRATEUR", 17, muted, .56f, .15f, .975f, .85f, TextAnchor.MiddleRight);
+        var header = Box("Header", safeRoot, hudGlass, .02f, .94f, .98f, .985f);
+        Label(header, "SMART / LOTO", 20, accent, .02f, .15f, .35f, .85f);
+        Label(header, "ASSISTANCE OPÉRATEUR · AR HUD", 14, muted, .50f, .15f, .98f, .85f, TextAnchor.MiddleRight);
 
-        welcomePanel = Panel("Identification", true);
-        var home = Box("Identification card", welcomePanel.transform, ink, .24f, .21f, .76f, .78f);
-        Label(home, "01 / IDENTIFICATION", 19, accent, .065f, .80f, .935f, .91f);
-        Label(home, "Chaque intervention\ncommence par le bon équipement.", 34, Color.white, .065f, .49f, .935f, .79f);
-        Label(home, "Identifiez la machine pour charger sa procédure.", 20, muted, .065f, .34f, .935f, .47f);
-        chooseQRScanButton = Action(home, "Scanner le QR code", .065f, .17f, .935f, .30f, true);
-        chooseManualButton = Action(home, "Choisir dans la liste des machines", .065f, .015f, .935f, .14f);
+        welcomePanel = Panel("Identification", false);
+        var home = Box("Identification card", welcomePanel.transform, hudGlass, .70f, .55f, .98f, .91f);
+        Label(home, "01 / IDENTIFICATION AR", 15, accent, .06f, .84f, .94f, .94f);
+        Label(home, "Orientez votre regard vers le QR code de la machine pour charger la procédure.", 16, hudText, .06f, .38f, .94f, .82f);
+        chooseManualButton = Action(home, "Sélection manuelle", .06f, .08f, .94f, .32f);
+        chooseQRScanButton = Action(home, "Scan QR", 0, 0, 0, 0);
+        chooseQRScanButton.gameObject.SetActive(false);
+
+        qrReticleObject = Box("AR Gaze Reticle", welcomePanel.transform, Color.clear, .46f, .43f, .54f, .57f).gameObject;
+        var ring = Box("Reticle ring", qrReticleObject.transform, new Color(0, 0.85f, 0.78f, 0.35f), 0, 0, 1, 1);
+        var ringImg = ring.GetComponent<Image>();
+        ringImg.type = Image.Type.Filled;
+        ringImg.fillMethod = Image.FillMethod.Radial360;
+        ringImg.fillOrigin = (int)Image.Origin360.Top;
+        ringImg.fillAmount = 0f;
+        qrReticleProgressImage = ringImg;
+        Box("Center dot", qrReticleObject.transform, accent, .45f, .45f, .55f, .55f);
+        Label(qrReticleObject.transform, "VISER LE QR CODE", 12, accent, -0.5f, -0.38f, 1.5f, -0.05f, TextAnchor.MiddleCenter);
 
         manualSelectionPanel = Panel("Machines", true);
-        var manual = Box("Machine selection", manualSelectionPanel.transform, ink, .24f, .21f, .76f, .78f);
+        var manual = Box("Machine selection", manualSelectionPanel.transform, hudGlass, .24f, .21f, .76f, .78f);
         Label(manual, "01 / SÉLECTION MANUELLE", 19, accent, .065f, .79f, .935f, .91f);
         Label(manual, "Identifier l'équipement", 32, Color.white, .065f, .63f, .935f, .78f);
         machineIdDropdown = MachineDropdown(manual);
@@ -88,20 +101,19 @@ public partial class LotoUIController
         qrBackButton = Action(qrScanPanel.transform, "Retour", .04f, .77f, .18f, .85f);
 
         stepPanel = Panel("Guided action", false);
-        cameraPreviewImage = Preview(stepPanel.transform, "Operator camera", .02f, .16f, .635f, .87f);
-        Label(cameraPreviewImage.transform, "VUE OPÉRATEUR", 19, muted, .03f, .89f, .8f, .98f);
-        var reticle = Box("Framing aid - not object tracking", cameraPreviewImage.transform,
-            Color.clear, .27f, .25f, .73f, .75f);
-        reticle.GetComponent<Image>().enabled = false;
-        AddReticleCorners(reticle, "Action reticle");
-        var guide = Box("Action card", stepPanel.transform, ink, .65f, .16f, .98f, .87f);
-        phaseTitleText = Label(guide, "CONSIGNATION", 18, accent, .07f, .87f, .93f, .97f);
-        stageTitleText = Label(guide, "Étape", 26, Color.white, .07f, .70f, .93f, .86f);
-        stepDescText = Label(guide, "Chargement de la consigne…", 24, Color.white, .07f, .48f, .93f, .69f);
-        visionPromptText = Label(guide, "Contrôle visuel", 18, muted, .07f, .34f, .93f, .47f);
-        validateButton = Action(guide, "Capturer et vérifier", .07f, .22f, .93f, .32f, true);
+        cameraPreviewImage = Preview(stepPanel.transform, "Operator camera", 0, 0, 1, 1);
+        cameraPreviewImage.color = Color.clear;
+        cameraPreviewImage.raycastTarget = false;
+
+        var guide = Box("Action card", stepPanel.transform, hudGlass, .70f, .18f, .98f, .91f);
+        AddHudEdge(guide);
+        phaseTitleText = Label(guide, "CONSIGNATION", 15, accent, .06f, .92f, .94f, .97f);
+        stageTitleText = Label(guide, "Étape", 18, hudText, .06f, .84f, .94f, .92f);
+        stepDescText = Label(guide, "Chargement de la consigne…", 18, hudText, .06f, .69f, .94f, .84f);
+        visionPromptText = ScrollableContext(guide);
+        validateButton = Action(guide, "Capturer et vérifier", .06f, .22f, .94f, .33f, true);
         overrideReasonInput = Reason(guide);
-        overrideButton = Action(guide, "Valider manuellement", .07f, .015f, .93f, .105f);
+        overrideButton = Action(guide, "Dérogation manuelle", .06f, .015f, .94f, .095f);
 
         maintenancePanel = Panel("Maintenance", true);
         Label(maintenancePanel.transform, "02 / MAINTENANCE GUIDÉE", 20, accent, .04f, .88f, .64f, .96f);
@@ -113,22 +125,22 @@ public partial class LotoUIController
             .45f, .45f, .55f, .55f, TextAnchor.MiddleCenter);
         maintenanceArrowLine.gameObject.SetActive(false);
         maintenanceArrowHead.gameObject.SetActive(false);
-        Label(maintenancePanel.transform, "VUE DE LA MAQUETTE · CLIQUEZ SUR LA ZONE À INTERVENIR", 16, muted,
+        Label(maintenancePanel.transform, "VUE ÉQUIPEMENT · CLIQUEZ SUR LE COMPOSANT SÉLECTIONNÉ", 16, muted,
             .04f, .10f, .64f, .16f, TextAnchor.MiddleCenter);
 
-        var work = Box("Maintenance card", maintenancePanel.transform, ink, .67f, .17f, .96f, .85f);
+        var work = Box("Maintenance card", maintenancePanel.transform, hudGlass, .70f, .17f, .98f, .85f);
+        AddHudEdge(work);
         Label(work, "CONSIGNE", 17, accent, .07f, .87f, .93f, .97f);
-        maintenanceTaskTitleText = Label(work, "Remplacer l'ampoule", 29, Color.white,
+        maintenanceTaskTitleText = Label(work, "Intervention", 24, Color.white,
             .07f, .69f, .93f, .86f);
-        maintenanceCalibrationText = Label(work,
-            "Cliquez sur l'ampoule dans l'image pour calibrer le repère de cette maquette.",
-            20, muted, .07f, .40f, .93f, .68f);
-        Label(work, "La calibration est enregistrée sur ce PC pour cette machine.",
-            16, muted, .07f, .30f, .93f, .40f);
-        startRestorationButton = Action(work, "Commencer la déconsignation", .07f, .07f, .93f, .22f, true);
+        maintenanceExpectedStateText = Label(work, "", 20, muted, .07f, .47f, .93f, .68f);
+        maintenanceCalibrationText = Label(work, "Sélectionnez un composant à calibrer.",
+            18, muted, .07f, .30f, .93f, .46f);
+        maintenanceComponentButton = Action(work, "Composant", .07f, .17f, .93f, .28f);
+        startRestorationButton = Action(work, "Poursuivre la procédure", .07f, .03f, .93f, .15f, true);
 
         signaturePanel = Panel("Signature", true);
-        var sign = Box("Signature card", signaturePanel.transform, ink, .24f, .16f, .76f, .84f);
+        var sign = Box("Signature card", signaturePanel.transform, hudGlass, .24f, .16f, .76f, .84f);
         Label(sign, "04 / CLÔTURE", 19, accent, .065f, .87f, .935f, .97f);
         closureSummaryText = Label(sign, "Consignation et déconsignation terminées.",
             19, muted, .065f, .76f, .935f, .86f);
@@ -155,7 +167,7 @@ public partial class LotoUIController
         overrideConfirmationPanel.SetActive(false);
 
         reportPanel = Panel("Rapport", true);
-        var report = Box("Report card", reportPanel.transform, ink, .24f, .21f, .76f, .78f);
+        var report = Box("Report card", reportPanel.transform, hudGlass, .24f, .21f, .76f, .78f);
         Label(report, "05 / TRAÇABILITÉ", 19, accent, .065f, .79f, .935f, .91f);
         Label(report, "Rapport d'intervention", 32, Color.white, .065f, .63f, .935f, .78f);
         reportUrlText = Label(report, "Rapport", 20, muted, .065f, .38f, .935f, .62f);
@@ -163,9 +175,12 @@ public partial class LotoUIController
         restartButton = Action(report, "Nouvelle intervention", .065f, .04f, .935f, .18f);
 
         header.SetAsLastSibling();
-        var status = Box("Status", safeRoot, surface, .02f, .025f, .98f, .125f);
+        var status = Box("Status", safeRoot, hudGlass, .20f, .04f, .80f, .10f);
+        AddHudEdge(status);
         statusBackgroundImage = status.GetComponent<Image>();
-        statusText = Label(status, "Connexion…", 21, Color.white, .025f, .12f, .975f, .88f);
+        statusText = Label(status, "Connexion…", 15, hudText, .03f, .08f, .97f, .92f, TextAnchor.MiddleCenter);
+        statusText.resizeTextMinSize = 12;
+
         ShowPanel(welcomePanel);
     }
 
@@ -210,7 +225,7 @@ public partial class LotoUIController
     }
     private GameObject Panel(string name, bool opaque)
     {
-        var p = Box(name, safeRoot, opaque ? new Color(ink.r,ink.g,ink.b,.96f) : Color.clear, 0, .14f, 1, .88f);
+        var p = Box(name, safeRoot, opaque ? new Color(ink.r,ink.g,ink.b,.18f) : Color.clear, 0, .14f, 1, .88f);
         // Child coordinates span the entire safe area for consistent geometry.
         Fit(p, 0, 0, 1, 1);
         p.gameObject.SetActive(false);
@@ -225,17 +240,51 @@ public partial class LotoUIController
         text.supportRichText = false; text.raycastTarget = false;
         text.horizontalOverflow = HorizontalWrapMode.Wrap;
         text.verticalOverflow = VerticalWrapMode.Truncate;
-        text.resizeTextForBestFit = true; text.resizeTextMinSize = 16; text.resizeTextMaxSize = size;
+        text.resizeTextForBestFit = true; text.resizeTextMinSize = Mathf.Min(14, size); text.resizeTextMaxSize = size;
+        text.lineSpacing = 1.05f;
+        return text;
+    }
+
+    private Text ScrollableContext(Transform parent)
+    {
+        var viewport = Box("Published step context", parent, Color.clear, .06f, .36f, .94f, .67f);
+        viewport.gameObject.AddComponent<Mask>().showMaskGraphic = false;
+        var scroll = viewport.gameObject.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.viewport = viewport;
+        var text = Label(viewport, "", 16, muted, 0, 0, 1, 1, TextAnchor.UpperLeft);
+        text.resizeTextForBestFit = false;
+        text.verticalOverflow = VerticalWrapMode.Overflow;
+        text.rectTransform.anchorMin = new Vector2(0, 1);
+        text.rectTransform.anchorMax = Vector2.one;
+        text.rectTransform.pivot = new Vector2(.5f, 1);
+        text.rectTransform.offsetMin = text.rectTransform.offsetMax = Vector2.zero;
+        text.gameObject.AddComponent<ContentSizeFitter>().verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+        scroll.content = text.rectTransform;
         return text;
     }
     private Button Action(Transform parent, string title, float x0, float y0, float x1, float y1, bool primary = false)
     {
-        var rect = Box(title, parent, primary ? accent : surface, x0, y0, x1, y1);
+        var rect = Box(title, parent, primary ? new Color32(20, 83, 88, 245) : surface, x0, y0, x1, y1);
+        if (primary) AddHudEdge(rect);
         var image = rect.GetComponent<Image>(); image.raycastTarget = true;
         var button = rect.gameObject.AddComponent<Button>(); button.targetGraphic = image;
-        var colors = button.colors; colors.disabledColor = new Color32(71,85,94,255); button.colors = colors;
-        Label(rect, title, 22, primary ? ink : Color.white, .04f, .06f, .96f, .94f, TextAnchor.MiddleCenter);
+        var colors = button.colors;
+        colors.highlightedColor = new Color32(200, 255, 247, 255);
+        colors.pressedColor = new Color32(145, 205, 210, 255);
+        colors.disabledColor = new Color32(105, 132, 143, 255);
+        button.colors = colors;
+        Label(rect, title, 20, hudText, .04f, .06f, .96f, .94f, TextAnchor.MiddleCenter);
         return button;
+    }
+
+    private void AddHudEdge(RectTransform rect)
+    {
+        var edge = rect.gameObject.AddComponent<Outline>();
+        edge.effectColor = new Color32(94, 234, 212, 55);
+        edge.effectDistance = new Vector2(1f, -1f);
+        edge.useGraphicAlpha = true;
     }
     private RawImage Preview(Transform parent, string name, float x0, float y0, float x1, float y1)
     {
@@ -282,12 +331,12 @@ public partial class LotoUIController
     }
     private InputField Reason(Transform parent)
     {
-        var rect = Box("Override reason", parent, surface, .07f,.12f,.93f,.205f);
+        var rect = Box("Override reason", parent, surface, .06f, .11f, .94f, .20f);
         rect.GetComponent<Image>().raycastTarget = true;
         var field = rect.gameObject.AddComponent<InputField>();
         field.targetGraphic = rect.GetComponent<Image>();
-        field.textComponent = Label(rect, "", 19, Color.white, .04f,.08f,.96f,.92f);
-        field.placeholder = Label(rect, "Motif de dérogation…", 19, muted, .04f,.08f,.96f,.92f);
+        field.textComponent = Label(rect, "", 16, Color.white, .04f, .08f, .96f, .92f);
+        field.placeholder = Label(rect, "Motif de dérogation…", 16, muted, .04f, .08f, .96f, .92f);
         field.characterLimit = 500;
         return field;
     }
